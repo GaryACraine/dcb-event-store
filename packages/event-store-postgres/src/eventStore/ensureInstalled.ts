@@ -38,7 +38,11 @@ const runMigration = async (client: Pool | PoolClient, tableName: string, lockSt
           sequence_position BIGSERIAL PRIMARY KEY,
           type             TEXT COLLATE "C" NOT NULL,
           tags             TEXT[] NOT NULL,
-          payload          TEXT NOT NULL
+          payload          TEXT NOT NULL,
+          message_id       UUID NOT NULL DEFAULT gen_random_uuid(),
+          recorded_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          schema_version   TEXT NOT NULL DEFAULT '1',
+          metadata         JSONB NOT NULL DEFAULT '{}'
         ) WITH (
           autovacuum_freeze_min_age = 10000000,
           autovacuum_freeze_table_age = 100000000
@@ -53,34 +57,54 @@ const runMigration = async (client: Pool | PoolClient, tableName: string, lockSt
         ON ${tableName} USING GIN(tags) WITH (fastupdate=off);
     `)
 
+    // Idempotent migration for existing tables: add new columns if missing
+    await client.query(`
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS message_id UUID NOT NULL DEFAULT gen_random_uuid();
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS recorded_at TIMESTAMPTZ NOT NULL DEFAULT now();
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS schema_version TEXT NOT NULL DEFAULT '1';
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
+        CREATE UNIQUE INDEX IF NOT EXISTS ${tableName}_message_id_idx ON ${tableName}(message_id);
+    `)
+
     if (lockStrategy.ensureSchema) {
         await lockStrategy.ensureSchema(client, tableName)
     }
 
-    // Drop the old function signature before installing the new one (CREATE OR REPLACE
+    // Drop old function signatures before installing the new one (CREATE OR REPLACE
     // refuses to change the parameter list).
     await client.query(`DROP FUNCTION IF EXISTS ${tableName}_append(
         bigint[], text[], text[], text[], int[], text[], text[], bigint[]
+    )`)
+    await client.query(`DROP FUNCTION IF EXISTS ${tableName}_append(
+        bigint[], bigint[], text[], text[], text[], int[], text[], text[], bigint[]
+    )`)
+    await client.query(`DROP FUNCTION IF EXISTS ${tableName}_append(
+        bigint[], bigint[], text[], text[], text[], int[], text[], text[], bigint[],
+        uuid[], text[], jsonb[]
     )`)
 
     // The lock-then-allocate invariant is load-bearing for the read barrier. Locks
     // (both leaf X and intent S) are acquired before any nextval/INSERT call.
     await client.query(`
         CREATE OR REPLACE FUNCTION ${tableName}_append(
-            p_lock_keys      bigint[],
-            p_intent_keys    bigint[],
-            p_types          text[],
-            p_tags           text[],
-            p_payloads       text[],
-            p_cond_cmd_idxs  int[],
-            p_cond_types     text[],
-            p_cond_tags      text[],
-            p_cond_after     bigint[]
+            p_lock_keys        bigint[],
+            p_intent_keys      bigint[],
+            p_types            text[],
+            p_tags             text[],
+            p_payloads         text[],
+            p_cond_cmd_idxs    int[],
+            p_cond_types       text[],
+            p_cond_tags        text[],
+            p_cond_after       bigint[],
+            p_message_ids      uuid[],
+            p_schema_versions  text[],
+            p_metadata         jsonb[]
         ) RETURNS bigint AS $fn$
         DECLARE
-            v_hwm    bigint;
-            v_pos    bigint;
-            v_failed int;
+            v_hwm      bigint;
+            v_pos      bigint;
+            v_failed   int;
+            v_inserted int;
         BEGIN
             IF (p_lock_keys IS NOT NULL AND array_length(p_lock_keys, 1) > 0)
                OR (p_intent_keys IS NOT NULL AND array_length(p_intent_keys, 1) > 0) THEN
@@ -137,9 +161,24 @@ const runMigration = async (client: Pool | PoolClient, tableName: string, lockSt
                 END IF;
             END IF;
 
-            INSERT INTO ${tableName} (type, tags, payload)
-            SELECT p_types[i], string_to_array(p_tags[i], E'\\x1F'), p_payloads[i]
-            FROM generate_subscripts(p_types, 1) AS i;
+            INSERT INTO ${tableName} (type, tags, payload, message_id, schema_version, metadata)
+            SELECT p_types[i],
+                   string_to_array(p_tags[i], E'\\x1F'),
+                   p_payloads[i],
+                   COALESCE(p_message_ids[i], gen_random_uuid()),
+                   COALESCE(p_schema_versions[i], '1'),
+                   COALESCE(p_metadata[i], '{}'::jsonb)
+            FROM generate_subscripts(p_types, 1) AS i
+            ON CONFLICT (message_id) DO NOTHING;
+
+            GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+            IF v_inserted = 0 THEN
+                SELECT MAX(sequence_position) INTO v_pos
+                FROM ${tableName}
+                WHERE message_id = ANY(p_message_ids);
+                RETURN v_pos;
+            END IF;
 
             SELECT currval(pg_get_serial_sequence('${tableName}', 'sequence_position')) INTO v_pos;
             PERFORM pg_notify('${tableName}', v_pos::text);

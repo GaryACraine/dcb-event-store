@@ -30,7 +30,11 @@ const readSql = (query: Query, tableName: string, options?: ReadSqlOptions) => {
       e.sequence_position,
       e.type,
       e.payload,
-      e.tags
+      e.tags,
+      e.message_id,
+      e.recorded_at,
+      e.schema_version,
+      e.metadata
     FROM ${tableName} e
     ${whereClause(filters)}
     ORDER BY e.sequence_position ${options?.backwards ? "DESC" : ""}

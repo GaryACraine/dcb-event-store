@@ -12,6 +12,7 @@ import { isInRange, matchesQueryItem, deduplicateEvents } from "./utils.js"
 import { Query } from "../Query.js"
 import { ensureIsArray } from "../../ensureIsArray.js"
 import { EventEmitter } from "events"
+import { v4 as uuid } from "uuid"
 
 const offsetPosition = (pos: SequencePosition, n: number) =>
     SequencePosition.fromString(String(parseInt(pos.toString()) + n))
@@ -30,9 +31,13 @@ export class MemoryEventStore implements EventStore {
 
     private emitter = new EventEmitter()
     private events: Array<SequencedEvent> = []
+    private messageIdIndex = new Map<string, SequencePosition>()
 
     constructor(initialEvents: Array<SequencedEvent> = []) {
         this.events = [...initialEvents]
+        for (const se of this.events) {
+            if (se.id) this.messageIdIndex.set(se.id, se.position)
+        }
     }
 
     public on(ev: "read" | "append", fn: () => void) {
@@ -80,6 +85,8 @@ export class MemoryEventStore implements EventStore {
         const snapshot = [...this.events]
         const allNewEvents: SequencedEvent[] = []
         let eventIndex = 0
+        const now = new Date()
+        let lastDuplicatePosition: SequencePosition | undefined
 
         for (let i = 0; i < commands.length; i++) {
             const cmd = commands[i]
@@ -95,15 +102,32 @@ export class MemoryEventStore implements EventStore {
             }
 
             for (const ev of evts) {
+                const messageId = ev.id ?? uuid()
+
+                const existingPosition = this.messageIdIndex.get(messageId)
+                if (existingPosition) {
+                    lastDuplicatePosition = existingPosition
+                    continue
+                }
+
+                const position = offsetPosition(lastPosition(this.events), ++eventIndex)
                 allNewEvents.push({
                     event: ev,
-                    position: offsetPosition(lastPosition(this.events), ++eventIndex)
+                    position,
+                    id: messageId,
+                    recordedAt: now
                 })
             }
         }
 
-        if (allNewEvents.length === 0) throw new Error("Cannot append zero events")
+        if (allNewEvents.length === 0) {
+            if (lastDuplicatePosition) return lastDuplicatePosition
+            throw new Error("Cannot append zero events")
+        }
 
+        for (const se of allNewEvents) {
+            this.messageIdIndex.set(se.id, se.position)
+        }
         this.events.push(...allNewEvents)
         this.emitter.emit("append")
         return allNewEvents[allNewEvents.length - 1].position

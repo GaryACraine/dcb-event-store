@@ -7,11 +7,15 @@ export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown
     tags: Tgs
     data: Dta
     metadata: Mtdta
+    id?: string
+    schemaVersion?: string
 }
 
 export interface SequencedEvent<T extends DcbEvent = DcbEvent> {
     event: T
     position: SequencePosition
+    id: string
+    recordedAt: Date
 }
 
 /**

@@ -1,0 +1,32 @@
+{
+    "name": "@dcb-es/examples-course-manager-cli-with-idempotent-commands",
+    "author": "Paul Grimshaw",
+    "license": "BSD-3-Clause",
+    "version": "2.2.1",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "build": "tsc -p tsconfig.json",
+        "watch": "tsc -w -p tsconfig.json",
+        "lint": "eslint \"**/*.ts\" .",
+        "lint-fix": "eslint \"**/*.ts\" . --fix"
+    },
+    "dependencies": {
+        "@dcb-es/event-store": "workspace:*",
+        "@dcb-es/event-store-postgres": "workspace:*",
+        "inquirer": "^8.0.0",
+        "interactive-cli": "^1.1.6",
+        "pg": "^8.20.0",
+        "uuid": "^9.0.1"
+    },
+    "devDependencies": {
+        "@testcontainers/postgresql": "^10.9.0",
+        "@types/inquirer": "^9.0.7",
+        "@types/pg": "^8.20.0",
+        "@types/uuid": "^9.0.8",
+        "testcontainers": "^10.9.0"
+    }
+}
