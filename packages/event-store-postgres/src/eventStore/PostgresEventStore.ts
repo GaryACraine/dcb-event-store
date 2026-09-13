@@ -12,6 +12,8 @@ import {
     ensureIsArray,
     validateAppendCondition
 } from "@dcb-es/event-store"
+import { v4 as uuid } from "uuid"
+import { Projection } from "../projections/projection.js"
 import { dbEventConverter } from "./utils.js"
 import { readSqlWithCursor } from "./readSql.js"
 import { ensureInstalled } from "./ensureInstalled.js"
@@ -46,6 +48,19 @@ export interface PostgresEventStoreOptions {
      * tag values per request, etc.).
      */
     hwmCacheMaxEntries?: number
+    /**
+     * Projections that run inside the append transaction. Their writes commit
+     * atomically with the events, eliminating eventual-consistency lag.
+     * Trade-off: advisory locks are held for the duration of projection code,
+     * reducing write concurrency on overlapping boundaries (Invariant 6).
+     */
+    inlineProjections?: Projection[]
+    /**
+     * Hook that runs inside the append transaction after inline projections
+     * but before COMMIT. Receives the newly appended SequencedEvent[].
+     * A throw rolls back both the events and any projection writes.
+     */
+    onBeforeCommit?: (events: SequencedEvent[], context: { client: PoolClient }) => Promise<void>
 }
 
 export class PostgresEventStore implements EventStore {
@@ -57,12 +72,16 @@ export class PostgresEventStore implements EventStore {
     private copyThreshold: number
     private lockStrategy: LockStrategy
     private hwmCache: HwmCache
+    private inlineProjections: Projection[]
+    private onBeforeCommit?: (events: SequencedEvent[], context: { client: PoolClient }) => Promise<void>
 
     constructor(options: PostgresEventStoreOptions) {
         this.pool = options.pool
         this.copyThreshold = options.copyThreshold ?? COPY_THRESHOLD
         this.lockStrategy = options.lockStrategy ?? advisoryLocks()
         this.hwmCache = new HwmCache(options.hwmCacheTtlMs ?? DEFAULT_HWM_CACHE_TTL_MS, options.hwmCacheMaxEntries)
+        this.inlineProjections = options.inlineProjections ?? []
+        this.onBeforeCommit = options.onBeforeCommit
         this.tableName = options.tablePrefix ? `${options.tablePrefix}_events` : "events"
         if (!VALID_IDENTIFIER.test(this.tableName))
             throw new Error(`Invalid table name "${this.tableName}": must match ${VALID_IDENTIFIER}`)
@@ -201,48 +220,67 @@ export class PostgresEventStore implements EventStore {
         leafLockKeys: bigint[],
         intentLockKeys: bigint[]
     ): Promise<SequencePosition> {
-        const {
-            types,
-            tags,
-            payloads,
-            messageIds,
-            schemaVersions,
-            metadataJsonb,
-            condCmdIdxs,
-            condTypes,
-            condTags,
-            condAfter
-        } = serializeCommands(commands)
-        const hasConditions = condCmdIdxs.length > 0
+        if (this.hasInlineWork) {
+            return this.appendViaFunctionWithInline(commands, leafLockKeys, intentLockKeys)
+        }
+        return this.appendViaFunctionAutocommit(commands, leafLockKeys, intentLockKeys)
+    }
+
+    /** Autocommit path — no inline projections, single round-trip. */
+    private async appendViaFunctionAutocommit(
+        commands: AppendCommand[],
+        leafLockKeys: bigint[],
+        intentLockKeys: bigint[]
+    ): Promise<SequencePosition> {
+        const { params } = buildAppendFunctionParams(commands, leafLockKeys, intentLockKeys)
 
         try {
             const result = await this.pool.query(
                 `SELECT ${this.appendFunctionName}($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::text[], $9::bigint[], $10::uuid[], $11::text[], $12::jsonb[]) as pos`,
-                [
-                    leafLockKeys,
-                    intentLockKeys,
-                    types,
-                    tags,
-                    payloads,
-                    hasConditions ? condCmdIdxs : null,
-                    hasConditions ? condTypes : null,
-                    hasConditions ? condTags : null,
-                    hasConditions ? condAfter : null,
-                    messageIds,
-                    schemaVersions,
-                    metadataJsonb
-                ]
+                params
             )
             return SequencePosition.fromString(String(result.rows[0].pos))
         } catch (err) {
-            const msg = (err as { message?: string }).message ?? ""
-            if (msg.includes(CONDITION_VIOLATED_SIGNAL)) {
-                const match = msg.match(/APPEND_CONDITION_VIOLATED:cmd=(\d+)/)
-                const idx = match ? parseInt(match[1]) : 0
-                throw new AppendConditionError(commands[idx].condition!, idx)
-            }
-            throw err
+            throw translateAppendError(err, commands)
         }
+    }
+
+    /** Transactional path — runs dcb_append + inline projections + hook in one tx. */
+    private async appendViaFunctionWithInline(
+        commands: AppendCommand[],
+        leafLockKeys: bigint[],
+        intentLockKeys: bigint[]
+    ): Promise<SequencePosition> {
+        const allMessageIds = preGenerateMessageIds(commands)
+        const { params } = buildAppendFunctionParams(commands, leafLockKeys, intentLockKeys)
+
+        return this.withTransaction(async client => {
+            const hwm = await getHighWaterMark(client, this.tableName)
+
+            let pos: number
+            try {
+                const result = await client.query(
+                    `SELECT ${this.appendFunctionName}($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::text[], $9::bigint[], $10::uuid[], $11::text[], $12::jsonb[]) as pos`,
+                    params
+                )
+                pos = Number(result.rows[0].pos)
+            } catch (err) {
+                throw translateAppendError(err, commands)
+            }
+
+            // Skip projections when all events were idempotent duplicates.
+            // dcb_append returns MAX(existing pos) for full duplicates, which is <= hwm.
+            if (pos > hwm) {
+                const appended = await this.readAppendedEventsByIds(client, allMessageIds)
+                await this.runInlineProjections(client, appended)
+                if (this.onBeforeCommit) {
+                    await this.onBeforeCommit(appended, { client })
+                }
+            }
+
+            // pg_notify inside dcb_append is deferred until COMMIT — no double notify.
+            return SequencePosition.fromString(String(pos))
+        })
     }
 
     /** COPY FROM STDIN — high throughput for > copyThreshold total events. */
@@ -287,6 +325,16 @@ export class PostgresEventStore implements EventStore {
                 }
             }
 
+            // Pre-generate message_ids when inline work is configured so we can
+            // read back exactly our events by identity, avoiding HWM-range races.
+            let allMessageIds: string[] | undefined
+            if (this.hasInlineWork) {
+                allMessageIds = events.map(evt => {
+                    if (!evt.id) evt.id = uuid()
+                    return evt.id
+                })
+            }
+
             const highWaterMark = await getHighWaterMark(client, this.tableName)
             await copyEventsToTable(client, this.tableName, events)
 
@@ -305,6 +353,14 @@ export class PostgresEventStore implements EventStore {
                 if (failedIdx !== null) throw new AppendConditionError(commands[failedIdx].condition!, failedIdx)
             }
 
+            if (this.hasInlineWork) {
+                const appended = await this.readAppendedEventsByIds(client, allMessageIds!)
+                await this.runInlineProjections(client, appended)
+                if (this.onBeforeCommit) {
+                    await this.onBeforeCommit(appended, { client })
+                }
+            }
+
             return this.notifyAndReturnPosition(client)
         })
     }
@@ -313,6 +369,34 @@ export class PostgresEventStore implements EventStore {
         const pos = await getLastPosition(client, this.tableName)
         await client.query("SELECT pg_notify($1, $2)", [this.notifyChannel, String(pos)])
         return SequencePosition.fromString(String(pos))
+    }
+
+    // ─── Inline projection helpers ───────────────────────────────────
+
+    private get hasInlineWork(): boolean {
+        return this.inlineProjections.length > 0 || this.onBeforeCommit !== undefined
+    }
+
+    /** Read back the events we just appended, identified by their pre-generated message_ids. */
+    private async readAppendedEventsByIds(client: PoolClient, messageIds: string[]): Promise<SequencedEvent[]> {
+        const result = await client.query(
+            `SELECT sequence_position, type, tags, payload, message_id, recorded_at, schema_version, metadata
+             FROM ${this.tableName}
+             WHERE message_id = ANY($1::uuid[])
+             ORDER BY sequence_position`,
+            [messageIds]
+        )
+        return result.rows.map(dbEventConverter.fromDb)
+    }
+
+    /** Filter appended events per projection's canHandle query and dispatch. */
+    private async runInlineProjections(client: PoolClient, events: SequencedEvent[]): Promise<void> {
+        for (const projection of this.inlineProjections) {
+            const filtered = filterEventsByQuery(events, projection.canHandle)
+            if (filtered.length > 0) {
+                await projection.handle(filtered, { client })
+            }
+        }
     }
 
     // ─── Transaction helper ─────────────────────────────────────────
@@ -330,6 +414,69 @@ export class PostgresEventStore implements EventStore {
         } finally {
             client.release()
         }
+    }
+}
+
+function translateAppendError(err: unknown, commands: AppendCommand[]): Error {
+    const msg = (err as { message?: string }).message ?? ""
+    if (msg.includes(CONDITION_VIOLATED_SIGNAL)) {
+        const match = msg.match(/APPEND_CONDITION_VIOLATED:cmd=(\d+)/)
+        const idx = match ? parseInt(match[1]) : 0
+        return new AppendConditionError(commands[idx].condition!, idx)
+    }
+    return err as Error
+}
+
+/**
+ * Pre-generate message_id UUIDs for events that don't have an explicit id.
+ * Mutates evt.id in place so that serializeCommands picks up the value.
+ * Returns the full list of ids for identity-based read-back.
+ */
+function preGenerateMessageIds(commands: AppendCommand[]): string[] {
+    const ids: string[] = []
+    for (const cmd of commands) {
+        for (const evt of ensureIsArray(cmd.events)) {
+            if (!evt.id) evt.id = uuid()
+            ids.push(evt.id)
+        }
+    }
+    return ids
+}
+
+function buildAppendFunctionParams(
+    commands: AppendCommand[],
+    leafLockKeys: bigint[],
+    intentLockKeys: bigint[]
+): { params: unknown[]; hasConditions: boolean } {
+    const {
+        types,
+        tags,
+        payloads,
+        messageIds,
+        schemaVersions,
+        metadataJsonb,
+        condCmdIdxs,
+        condTypes,
+        condTags,
+        condAfter
+    } = serializeCommands(commands)
+    const hasConditions = condCmdIdxs.length > 0
+    return {
+        params: [
+            leafLockKeys,
+            intentLockKeys,
+            types,
+            tags,
+            payloads,
+            hasConditions ? condCmdIdxs : null,
+            hasConditions ? condTypes : null,
+            hasConditions ? condTags : null,
+            hasConditions ? condAfter : null,
+            messageIds,
+            schemaVersions,
+            metadataJsonb
+        ],
+        hasConditions
     }
 }
 
@@ -398,4 +545,24 @@ function flattenConditionRows(conditions: { cmdIdx: number; type: string; tags: 
         condAfter.push(c.afterPos)
     }
     return { condCmdIdxs, condTypes, condTags, condAfter }
+}
+
+/**
+ * Filter events by a projection's canHandle Query. For Query.all(), all events pass.
+ * Otherwise an event matches if any QueryItem matches (type in item.types AND,
+ * if item.tags is set, all tag values are present on the event).
+ */
+function filterEventsByQuery(events: SequencedEvent[], query: Query): SequencedEvent[] {
+    if (query.isAll) return events
+    return events.filter(se => {
+        for (const item of query.items) {
+            if (!item.types.includes(se.event.type)) continue
+            if (item.tags) {
+                const eventTagValues = se.event.tags.values
+                if (!item.tags.values.every(t => eventTagValues.includes(t))) continue
+            }
+            return true
+        }
+        return false
+    })
 }

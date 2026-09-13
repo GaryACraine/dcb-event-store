@@ -706,7 +706,7 @@ pure and would be Easy.
 | 3 | `phase-3/consumer-hardening` | complete | N/A (processor lock is session-scoped, not in append/read hot path) |
 | 4 | `phase-4/projection-abstraction` | complete | N/A (no append/read/lock changes) |
 | 5 | `phase-5/pongo-projections` | complete | N/A (no append/read/lock changes) |
-| 6 | | not started | |
+| 6 | `phase-6/inline-projections` | complete | bench pending — no append/read path changes when no inline projections configured |
 | 7 | | not started | |
 | 8 | | not started | |
 | 9 | | not started | |

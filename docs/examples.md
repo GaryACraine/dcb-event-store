@@ -11,6 +11,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
 | `course-manager-cli-with-projections` | PostgreSQL read model | `Projection`, `rawSqlProjection`, `projectionToProcessor`, `ProjectionSpec` |
 | `course-manager-cli-with-pongo` | Pongo JSONB documents | `pongoProjection`, Pongo collections, JSONB document read models |
+| `course-manager-cli-with-inline-projection` | Pongo JSONB documents | `inlineProjections`, atomic read model updates, no consumer/waitUntilProcessed |
 
 Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
 
@@ -487,3 +488,59 @@ export const courseSubscriptionsProjection = pongoProjection({
 | Test assertions | Query relational columns | Query Pongo `data` JSONB column |
 | Dependencies | `pg` only | `@event-driven-io/pongo`, `@event-driven-io/dumbo`, `pg` |
 | Events, DecisionModels, Api, Cli | Unchanged | Unchanged |
+
+---
+
+## course-manager-cli-with-inline-projection
+
+**Location:** [`examples/course-manager-cli-with-inline-projection/`](../examples/course-manager-cli-with-inline-projection/)
+
+This example extends the Pongo example by running the projection **inline** -- inside the `append` transaction itself -- instead of asynchronously in a separate consumer process. The read model is consistent the instant `append` returns; there is no `waitUntilProcessed`, no consumer lifecycle, and no bookmark table.
+
+### What it adds
+
+- **`inlineProjections`** option on `PostgresEventStore` -- the same `Projection` object that previously ran in a consumer is passed directly to the store constructor. When events are appended, the store runs the projection inside the append transaction before committing.
+- **No consumer, no bookmarks** -- `createConsumer`, `projectionToProcessor`, `ensureHandlersInstalled`, and `waitUntilProcessed` are all removed. The `Api` class no longer captures the returned `SequencePosition` or waits for anything after `append`.
+- **Atomic consistency** -- events and read model writes commit in the same transaction. If the projection throws, the events are rolled back too. If the database crashes between `append` and the projection, neither is persisted.
+
+### Trade-off
+
+Advisory locks acquired by `dcb_append` are held for the duration of the inline projection code. This directly reduces write concurrency on overlapping consistency boundaries (Invariant 6 in `CLAUDE.md`). The default autocommit path (no inline projections configured) is completely unchanged, so existing users see no performance regression.
+
+### Entry point wiring
+
+The [`index.ts`](../examples/course-manager-cli-with-inline-projection/index.ts) entry point is simpler than the Pongo example -- no consumer setup or shutdown:
+
+```typescript
+import { PostgresEventStore } from "@dcb-es/event-store-postgres"
+import { courseSubscriptionsProjection } from "./src/api/PostgresCourseSubscriptionsProjection.js"
+
+const eventStore = new PostgresEventStore({
+    pool,
+    inlineProjections: [courseSubscriptionsProjection]
+})
+await eventStore.ensureInstalled()
+
+// Init Pongo collection tables eagerly
+const initClient = await pool.connect()
+await courseSubscriptionsProjection.init!(initClient)
+initClient.release()
+
+const api = new Api(pool, eventStore)
+await startCli(api)
+await pool.end()
+```
+
+### How it differs from the Pongo example
+
+| Aspect | Pongo example | Inline projection example |
+|--------|--------------|--------------------------|
+| Projection execution | Asynchronous via `createConsumer` | Inline in `append` transaction |
+| Read-your-writes | `waitUntilProcessed` after every `append` | Immediate -- `append` returns with read model updated |
+| Consumer lifecycle | `createConsumer` start + `consumer.stop()` shutdown | None |
+| Bookmark table | `_handler_bookmarks` with CAS versioning | Not needed |
+| `ensureHandlersInstalled` | Required | Not needed |
+| Api imports | `waitUntilProcessed`, `PROJECTION_NAME` | Neither -- no wait, no projection name |
+| Failure behaviour | Projection lag visible to queries; projection retries autonomously | Projection failure rolls back the append; caller sees the error |
+| Write concurrency | Locks released at append commit | Locks held through projection code (Invariant 6) |
+| Projection, Repository, Events, DecisionModels, Cli | Unchanged | Unchanged |
