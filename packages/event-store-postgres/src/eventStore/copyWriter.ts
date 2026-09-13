@@ -3,6 +3,7 @@ import { from as copyFrom } from "pg-copy-streams"
 import { pipeline } from "stream/promises"
 import { Readable } from "stream"
 import { DcbEvent } from "@dcb-es/event-store"
+import { v4 as uuid } from "uuid"
 
 export interface ConditionRow {
     cmdIdx: number
@@ -15,20 +16,28 @@ export interface ConditionRow {
  * Stream events into the events table via COPY FROM STDIN.
  * Accepts an iterable to avoid materialising large arrays.
  * Postgres never parses the payload — it's stored as opaque TEXT.
+ * `recorded_at` is omitted from the column list so the DEFAULT now() applies.
  */
 export async function copyEventsToTable(
     client: PoolClient,
     tableName: string,
     events: Iterable<DcbEvent>
 ): Promise<void> {
-    const copyStream = client.query(copyFrom(`COPY ${tableName} (type, tags, payload) FROM STDIN WITH (FORMAT text)`))
+    const copyStream = client.query(
+        copyFrom(
+            `COPY ${tableName} (type, tags, payload, message_id, schema_version, metadata) FROM STDIN WITH (FORMAT text)`
+        )
+    )
 
     const source = Readable.from(
         (function* () {
             for (const evt of events) {
                 const tags = formatTagsForCopy(evt.tags.values)
                 const payload = escapeCopy(serializePayload(evt))
-                yield `${escapeCopy(evt.type)}\t${tags}\t${payload}\n`
+                const messageId = evt.id ?? uuid()
+                const schemaVersion = escapeCopy(evt.schemaVersion ?? "1")
+                const metadata = escapeCopy(JSON.stringify(evt.metadata ?? {}))
+                yield `${escapeCopy(evt.type)}\t${tags}\t${payload}\t${messageId}\t${schemaVersion}\t${metadata}\n`
             }
         })()
     )

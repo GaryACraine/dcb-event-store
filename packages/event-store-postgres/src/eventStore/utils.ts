@@ -11,6 +11,10 @@ export type DbReadEvent = {
     payload: string
     tags: string[]
     sequence_position: string
+    message_id: string
+    recorded_at: string
+    schema_version: string
+    metadata: Record<string, unknown>
 }
 
 export const dbEventConverter = {
@@ -23,11 +27,15 @@ export const dbEventConverter = {
         const { data, metadata } = JSON.parse(dbEvent.payload)
         return {
             position: SequencePosition.fromString(dbEvent.sequence_position),
+            id: dbEvent.message_id,
+            recordedAt: new Date(dbEvent.recorded_at),
             event: {
                 type: dbEvent.type,
                 data,
                 metadata,
-                tags: Tags.from(dbEvent.tags)
+                tags: Tags.from(dbEvent.tags),
+                id: dbEvent.message_id,
+                schemaVersion: dbEvent.schema_version
             }
         }
     }

@@ -9,6 +9,7 @@
     "updateInternalDependencies": "patch",
     "ignore": [
         "@dcb-es/examples-course-manager-cli",
-        "@dcb-es/examples-course-manager-cli-with-readmodel"
+        "@dcb-es/examples-course-manager-cli-with-readmodel",
+        "@dcb-es/examples-course-manager-cli-with-idempotent-commands"
     ]
 }

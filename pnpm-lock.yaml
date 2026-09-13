@@ -103,6 +103,43 @@ importers:
         specifier: ^10.9.0
         version: 10.28.0
 
+  examples/course-manager-cli-with-idempotent-commands:
+    dependencies:
+      '@dcb-es/event-store':
+        specifier: workspace:*
+        version: link:../../packages/event-store
+      '@dcb-es/event-store-postgres':
+        specifier: workspace:*
+        version: link:../../packages/event-store-postgres
+      inquirer:
+        specifier: ^8.0.0
+        version: 8.2.7(@types/node@25.6.0)
+      interactive-cli:
+        specifier: ^1.1.6
+        version: 1.1.6
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
+      uuid:
+        specifier: ^9.0.1
+        version: 9.0.1
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: ^10.9.0
+        version: 10.28.0
+      '@types/inquirer':
+        specifier: ^9.0.7
+        version: 9.0.9
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      '@types/uuid':
+        specifier: ^9.0.8
+        version: 9.0.8
+      testcontainers:
+        specifier: ^10.9.0
+        version: 10.28.0
+
   examples/course-manager-cli-with-readmodel:
     dependencies:
       '@dcb-es/event-store':
@@ -179,6 +216,9 @@ importers:
       pg-copy-streams:
         specifier: ^7.0.0
         version: 7.0.0
+      uuid:
+        specifier: ^9.0.1
+        version: 9.0.1
     devDependencies:
       '@testcontainers/postgresql':
         specifier: ^10.9.0
@@ -189,6 +229,9 @@ importers:
       '@types/pg-copy-streams':
         specifier: ^1.2.5
         version: 1.2.5
+      '@types/uuid':
+        specifier: ^9.0.8
+        version: 9.0.8
       testcontainers:
         specifier: ^10.9.0
         version: 10.28.0
@@ -2148,6 +2191,7 @@ packages:
 
   uuid@10.0.0:
     resolution: {integrity: sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   uuid@9.0.1:

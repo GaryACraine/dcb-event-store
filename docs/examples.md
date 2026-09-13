@@ -1,10 +1,11 @@
 # Examples
 
-The repository includes two CLI applications that implement the [course subscriptions](https://dcb.events/examples/course-subscriptions/) example from dcb.events. Both manage the same domain -- courses, students, and subscriptions -- but differ in how they handle reads.
+The repository includes CLI applications that implement the [course subscriptions](https://dcb.events/examples/course-subscriptions/) example from dcb.events. All manage the same domain -- courses, students, and subscriptions -- but differ in which features they demonstrate.
 
 | Example | Reads from | Key concepts |
 |---------|-----------|--------------|
 | `course-manager-cli` | Event stream (on-the-fly) | Core DCB pattern, decision models, command handling |
+| `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 
 Both require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store.
@@ -155,3 +156,37 @@ The **write side is identical** -- same events, same decision models, same `buil
 | Lifecycle | Start store, run CLI | Start store, install handlers, install read model tables, start handler, run CLI, shut down handler |
 
 The basic example is appropriate when all interactions are commands that need only the state derivable from decision models. The read model example is appropriate when you need rich query capabilities -- listing, searching, joining -- that would be expensive or awkward to derive from the event stream on every request.
+
+---
+
+## course-manager-cli-with-idempotent-commands
+
+**Location:** [`examples/course-manager-cli-with-idempotent-commands/`](../examples/course-manager-cli-with-idempotent-commands/)
+
+This example extends the basic CLI with client-supplied idempotency keys. The write side is the same domain -- courses, students, and subscriptions -- but every command accepts an optional `idempotencyKey` parameter that is passed through as the event's `id` (the `message_id` column in Postgres). Resending a command with the same key is a no-op at the store level: the event is not duplicated, and the original position is returned.
+
+### What it adds
+
+- An **`idempotencyKey` parameter** on every command in `Api.ts`
+- Event classes gain a public `id?: string` field, set from the idempotency key
+- Tests demonstrating: same key twice = one event stored, metadata round-trip, `recordedAt` on read
+
+### Entry point wiring
+
+Identical to the basic example. The idempotency feature requires no additional setup -- it is built into `PostgresEventStore.append()` via the `message_id` unique index.
+
+### How idempotency works
+
+When `idempotencyKey` is provided, the `Api` sets `event.id = idempotencyKey` before calling `eventStore.append()`. The store passes this as the `message_id` to Postgres, which uses `INSERT ... ON CONFLICT (message_id) DO NOTHING`. If the event already exists, the store returns the existing event's position without inserting a duplicate.
+
+Note that idempotency operates at the **store level**, not the application level. On retry, `buildDecisionModel` still runs and may throw a domain error (e.g., "Course already exists") because it sees the event from the first attempt. This is the correct behavior: the command already succeeded, and the domain state reflects it.
+
+### How it differs from the basic example
+
+| Aspect | Basic example | Idempotent commands example |
+|--------|--------------|----------------------------|
+| Command parameters | Domain fields only | Domain fields + optional `idempotencyKey` |
+| Event classes | No `id` field | Public `id?: string` field |
+| Store-level retry safety | Not handled | Duplicate `message_id` returns existing position |
+| `recordedAt` on read | Not available | Available as `Date` on every `SequencedEvent` |
+| Metadata queryability | Stored in payload TEXT | Also stored in JSONB `metadata` column, queryable with `->>`|

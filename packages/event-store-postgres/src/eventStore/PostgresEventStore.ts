@@ -201,12 +201,23 @@ export class PostgresEventStore implements EventStore {
         leafLockKeys: bigint[],
         intentLockKeys: bigint[]
     ): Promise<SequencePosition> {
-        const { types, tags, payloads, condCmdIdxs, condTypes, condTags, condAfter } = serializeCommands(commands)
+        const {
+            types,
+            tags,
+            payloads,
+            messageIds,
+            schemaVersions,
+            metadataJsonb,
+            condCmdIdxs,
+            condTypes,
+            condTags,
+            condAfter
+        } = serializeCommands(commands)
         const hasConditions = condCmdIdxs.length > 0
 
         try {
             const result = await this.pool.query(
-                `SELECT ${this.appendFunctionName}($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::text[], $9::bigint[]) as pos`,
+                `SELECT ${this.appendFunctionName}($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::int[], $7::text[], $8::text[], $9::bigint[], $10::uuid[], $11::text[], $12::jsonb[]) as pos`,
                 [
                     leafLockKeys,
                     intentLockKeys,
@@ -216,7 +227,10 @@ export class PostgresEventStore implements EventStore {
                     hasConditions ? condCmdIdxs : null,
                     hasConditions ? condTypes : null,
                     hasConditions ? condTags : null,
-                    hasConditions ? condAfter : null
+                    hasConditions ? condAfter : null,
+                    messageIds,
+                    schemaVersions,
+                    metadataJsonb
                 ]
             )
             return SequencePosition.fromString(String(result.rows[0].pos))
@@ -247,8 +261,34 @@ export class PostgresEventStore implements EventStore {
                 this.tableName
             )
 
+            // Idempotency check: detect duplicate message_ids before COPY
+            // (COPY cannot do ON CONFLICT). Only check when events supply explicit ids.
+            const events = [...eventIterator()]
+            const suppliedIds = events.filter(e => e.id).map(e => e.id!)
+            if (suppliedIds.length > 0) {
+                const dupResult = await client.query(
+                    `SELECT message_id FROM ${this.tableName} WHERE message_id = ANY($1::uuid[])`,
+                    [suppliedIds]
+                )
+                const duplicateIds = new Set(dupResult.rows.map((r: { message_id: string }) => r.message_id))
+                if (duplicateIds.size > 0) {
+                    if (duplicateIds.size === suppliedIds.length && suppliedIds.length === events.length) {
+                        // All events are duplicates — return max position of existing events
+                        const posResult = await client.query(
+                            `SELECT MAX(sequence_position) as pos FROM ${this.tableName} WHERE message_id = ANY($1::uuid[])`,
+                            [suppliedIds]
+                        )
+                        return SequencePosition.fromString(String(posResult.rows[0].pos))
+                    }
+                    throw new Error(
+                        `Partial duplicate: ${duplicateIds.size} of ${events.length} events have message_ids that already exist. ` +
+                            `This indicates a mix of retry and new events in one batch, which is not supported.`
+                    )
+                }
+            }
+
             const highWaterMark = await getHighWaterMark(client, this.tableName)
-            await copyEventsToTable(client, this.tableName, eventIterator())
+            await copyEventsToTable(client, this.tableName, events)
 
             if (conditions.length > 0) {
                 const { condCmdIdxs, condTypes, condTags, condAfter } = flattenConditionRows(conditions)
@@ -301,6 +341,9 @@ function serializeCommands(commands: AppendCommand[]) {
     const types: string[] = []
     const tags: string[] = []
     const payloads: string[] = []
+    const messageIds: (string | null)[] = []
+    const schemaVersions: (string | null)[] = []
+    const metadataJsonb: (string | null)[] = []
     const condCmdIdxs: number[] = []
     const condTypes: string[] = []
     const condTags: string[] = []
@@ -312,6 +355,9 @@ function serializeCommands(commands: AppendCommand[]) {
             types.push(evt.type)
             tags.push(evt.tags.values.join(TAG_DELIMITER))
             payloads.push(serializePayload(evt))
+            messageIds.push(evt.id ?? null)
+            schemaVersions.push(evt.schemaVersion ?? null)
+            metadataJsonb.push(JSON.stringify(evt.metadata ?? {}))
         }
         if (cmd.condition) {
             const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
@@ -326,7 +372,18 @@ function serializeCommands(commands: AppendCommand[]) {
         }
     }
 
-    return { types, tags, payloads, condCmdIdxs, condTypes, condTags, condAfter }
+    return {
+        types,
+        tags,
+        payloads,
+        messageIds,
+        schemaVersions,
+        metadataJsonb,
+        condCmdIdxs,
+        condTypes,
+        condTags,
+        condAfter
+    }
 }
 
 function flattenConditionRows(conditions: { cmdIdx: number; type: string; tags: string[]; afterPos: number }[]) {
