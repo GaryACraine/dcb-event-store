@@ -6,8 +6,8 @@ import { EventHandlerWithState } from "./EventHandlerWithState.js"
 import { matchTags } from "./matchTags.js"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EventHandlers = Record<string, EventHandlerWithState<any, any>>
-type EventHandlerStates<T extends EventHandlers> = {
+export type EventHandlers = Record<string, EventHandlerWithState<any, any>>
+export type EventHandlerStates<T extends EventHandlers> = {
     [K in keyof T]: T[K]["init"]
 }
 

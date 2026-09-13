@@ -9,6 +9,8 @@ export {
     validateAppendCondition
 } from "./src/eventStore/EventStore.js"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError.js"
+export { DcbCommand } from "./src/eventStore/DcbCommand.js"
+export { DcbError, NotFoundError, ValidationError, IllegalStateError } from "./src/eventStore/errors.js"
 
 export { Query, QueryItem } from "./src/eventStore/Query.js"
 export { Tags } from "./src/eventStore/Tags.js"
@@ -20,4 +22,7 @@ export { ensureIsArray } from "./src/ensureIsArray.js"
 
 export { EventHandler } from "./src/eventHandling/EventHandler.js"
 export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState.js"
-export { buildDecisionModel } from "./src/eventHandling/buildDecisionModel.js"
+export { buildDecisionModel, EventHandlers, EventHandlerStates } from "./src/eventHandling/buildDecisionModel.js"
+export { Decider, decider, handle } from "./src/eventHandling/Decider.js"
+
+export { DeciderSpecification } from "./src/testing/index.js"

@@ -1,0 +1,18 @@
+dcb-event-store
+Copyright Kraken Technologies Limited
+Licensed under the BSD-3-Clause License.
+
+This project includes code adapted from the following:
+
+---
+
+Emmett — Event Sourcing development framework
+Copyright (c) Oskar Dudycz and contributors
+Licensed under the MIT License
+https://github.com/event-driven-io/emmett
+
+The `DeciderSpecification` pattern (given/when/then testing for deciders) and
+the `Decider` type structure are adapted from Emmett's `deciderSpecification.ts`
+and related modules. The DCB adaptation replaces stream-based concurrency with
+tag/boundary-based `AppendCondition` assertions and adds `.thenCondition()` for
+consistency boundary testing.

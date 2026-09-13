@@ -30,6 +30,22 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   Phase 1 alongside `payload`: `message_id UUID`, `recorded_at TIMESTAMPTZ`,
   `schema_version TEXT` (default `'1'`), `metadata JSONB` (default `{}`).
   Schema migration is idempotent (`ADD COLUMN IF NOT EXISTS`).
+- **DcbCommand** — typed command interface mirroring `DcbEvent` but without
+  tags: `DcbCommand<Type, Data>`. Commands are plain type aliases and object
+  literals, not classes.
+- **Decider** — formalises the command-handling pattern: `handlers(cmd)`
+  returns the `EventHandlerWithState` map, `decide(cmd, state)` produces
+  events or throws. The `decider()` factory infers handler types; `handle()`
+  orchestrates `buildDecisionModel` → `decide` → `append`.
+- **Typed domain errors** — `DcbError` base class (extends `Error`, adds
+  `code` and `status`). Subclasses: `NotFoundError` (404),
+  `ValidationError` (400), `IllegalStateError` (422).
+  `AppendConditionError` extends `DcbError` (status 409).
+- **DeciderSpecification** — fluent given/when/then API for testing Deciders
+  against a `MemoryEventStore`. Asserts emitted events (`.then`), errors
+  (`.thenThrows`), empty results (`.thenNothingHappened`), and the append
+  condition / consistency boundary (`.thenCondition`). Pure in-memory, no
+  Postgres needed.
 
 ## Repo shape
 
