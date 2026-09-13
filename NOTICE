@@ -16,3 +16,11 @@ the `Decider` type structure are adapted from Emmett's `deciderSpecification.ts`
 and related modules. The DCB adaptation replaces stream-based concurrency with
 tag/boundary-based `AppendCondition` assertions and adds `.thenCondition()` for
 consistency boundary testing.
+
+The consumer/processor pattern (session-scoped processor lock, CAS-versioned
+checkpoints, start-position policies, consumer lifecycle) is adapted from
+Emmett's `postgreSQLProcessor.ts`, `processorsLocks.ts`,
+`storeProcessorCheckpoint.ts`, and `processorStartPositions.ts`. The DCB
+adaptation uses plain `sequence_position` checkpoints (no composite
+transaction_id/global_position), a distinct `P:` advisory lock namespace, and
+tag/boundary-based event queries.

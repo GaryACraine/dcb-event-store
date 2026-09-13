@@ -7,6 +7,13 @@ export const ensureHandlersInstalled = async (pool: Pool, handlerIds: string[], 
             last_sequence_position BIGINT
         );`)
 
+    // Phase 3: add columns for processor hardening (idempotent)
+    await pool.query(`
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS instance_id TEXT;
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ NOT NULL DEFAULT now();
+    `)
+
     await registerHandlers(pool, handlerIds, tableName)
 }
 
