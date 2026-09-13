@@ -8,3 +8,17 @@ export { pongoProjection } from "./pongo/pongoProjection.js"
 export type { PongoProjectionOptions, PongoProjectionContext } from "./pongo/pongoProjection.js"
 export { pongoDocumentProjection } from "./pongo/pongoDocumentProjection.js"
 export type { PongoDocumentProjectionOptions } from "./pongo/pongoDocumentProjection.js"
+
+export { rebuildProjection } from "./rebuildProjection.js"
+export type { RebuildProjectionOptions } from "./rebuildProjection.js"
+
+export {
+    registerProjection,
+    readProjectionStatus,
+    setProjectionStatus,
+    serializeCanHandle
+} from "./registry/projectionRegistry.js"
+export type { ProjectionType, ProjectionStatus, RegisterProjectionOptions } from "./registry/projectionRegistry.js"
+
+export { tryAcquireSharedProjectionLock, acquireExclusiveProjectionLock } from "./projectionLock.js"
+export type { SharedProjectionLockResult } from "./projectionLock.js"

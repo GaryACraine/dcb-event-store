@@ -544,3 +544,41 @@ await pool.end()
 | Failure behaviour | Projection lag visible to queries; projection retries autonomously | Projection failure rolls back the append; caller sees the error |
 | Write concurrency | Locks released at append commit | Locks held through projection code (Invariant 6) |
 | Projection, Repository, Events, DecisionModels, Cli | Unchanged | Unchanged |
+
+---
+
+## `course-manager-cli-with-rebuild`
+
+**Package:** `@dcb-es/examples-course-manager-cli-with-rebuild`
+**Base:** `course-manager-cli-with-pongo`
+**Phase:** 7 — Projection Registry and Rebuild Tooling
+
+### What it adds
+
+This example demonstrates projection versioning and rebuild. It extends the
+Pongo example with:
+
+- A **v2 projection** (`courseSubscriptionsProjectionV2`) that adds a
+  `subscriberCount` field to the course document, computed from
+  subscription/unsubscription events.
+- A test that exercises the full **rebuild lifecycle**: append events with
+  v1 → verify v1 read model (no `subscriberCount`) → stop consumer →
+  `rebuildProjection()` with v2 → verify v2 read model (`subscriberCount`
+  populated) → start v2 consumer → append more events → verify v2 includes
+  new events.
+
+### How it differs from the base
+
+| Aspect | `course-manager-cli-with-pongo` | `course-manager-cli-with-rebuild` |
+|---|---|---|
+| Projection versions | Single v1 | v1 + v2 with `subscriberCount` |
+| `rebuildProjection` | Not used | Core feature under test |
+| Registry participation | Implicit (factory wraps init) | Implicit + rebuild deactivate/reactivate cycle |
+| Test focus | CRUD through async projection | v1 → rebuild → v2 migration |
+
+### Key files
+
+| File | Role |
+|---|---|
+| `src/api/PostgresCourseSubscriptionsProjection.ts` | v1 + v2 projection definitions |
+| `src/api/Api.tests.ts` | Rebuild lifecycle test |

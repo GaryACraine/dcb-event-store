@@ -17,6 +17,13 @@ export interface ProcessorOptions {
     pollIntervalMs?: number
     startFrom?: StartPosition
     stopAfter?: number
+    /**
+     * When true, the processor reads all available events in a loop (using
+     * `eventStore.read()`) instead of `subscribe()`. After a read cycle that
+     * yields zero events, the processor exits cleanly. Used by rebuild to
+     * process everything then stop.
+     */
+    stopWhenCaughtUp?: boolean
     signal?: AbortSignal
     instanceId?: string
 }
@@ -62,6 +69,7 @@ export function createProcessor(options: ProcessorOptions): RunningProcessor {
         pollIntervalMs,
         startFrom,
         stopAfter,
+        stopWhenCaughtUp: options.stopWhenCaughtUp,
         signal,
         instanceId
     })
@@ -80,6 +88,7 @@ interface InternalProcessorOptions {
     pollIntervalMs: number
     startFrom: StartPosition
     stopAfter?: number
+    stopWhenCaughtUp?: boolean
     signal?: AbortSignal
     instanceId: string
 }
@@ -148,12 +157,10 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                       ])
         }
 
-        // 5. Subscribe for events — subscribe() handles LISTEN + read + poll internally
+        // 5. Process events
         let processedCount = 0
 
-        for await (const event of eventStore.subscribe(query, { after: position, pollIntervalMs, signal })) {
-            if (signal?.aborted) break
-
+        const processEvent = async (event: import("@dcb-es/event-store").SequencedEvent): Promise<void> => {
             const client = await pool.connect()
             try {
                 await client.query("BEGIN")
@@ -187,8 +194,27 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             } finally {
                 client.release()
             }
+        }
 
-            if (stopAfter !== undefined && processedCount >= stopAfter) break
+        if (opts.stopWhenCaughtUp) {
+            // Read-loop mode: process all available events then exit
+            while (!signal?.aborted) {
+                let hadEvents = false
+                for await (const event of eventStore.read(query, { after: position })) {
+                    if (signal?.aborted) break
+                    await processEvent(event)
+                    hadEvents = true
+                    if (stopAfter !== undefined && processedCount >= stopAfter) break
+                }
+                if (!hadEvents || (stopAfter !== undefined && processedCount >= stopAfter)) break
+            }
+        } else {
+            // Subscribe mode: persistent cursor + LISTEN wakeup
+            for await (const event of eventStore.subscribe(query, { after: position, pollIntervalMs, signal })) {
+                if (signal?.aborted) break
+                await processEvent(event)
+                if (stopAfter !== undefined && processedCount >= stopAfter) break
+            }
         }
     } finally {
         await lock.release()

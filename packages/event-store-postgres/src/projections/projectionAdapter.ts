@@ -3,6 +3,7 @@ import { DcbEvent, EventHandler, SequencedEvent, Tags } from "@dcb-es/event-stor
 import { ConsumerProcessorConfig } from "../eventHandling/consumer.js"
 import { StartPosition } from "../eventHandling/startPositions.js"
 import { Projection } from "./projection.js"
+import { tryAcquireSharedProjectionLock } from "./projectionLock.js"
 
 export interface ProjectionProcessorOptions {
     pollIntervalMs?: number
@@ -16,6 +17,7 @@ export function projectionToProcessor(
     options?: ProjectionProcessorOptions
 ): ConsumerProcessorConfig {
     const eventTypes = extractEventTypes(projection)
+    const projectionVersion = projection.version ?? 1
 
     return {
         processorName: projection.name,
@@ -25,6 +27,12 @@ export function projectionToProcessor(
                 eventTypes.map(type => [
                     type,
                     async (event: SequencedEvent) => {
+                        const { acquired, isActive } = await tryAcquireSharedProjectionLock(
+                            client,
+                            projection.name,
+                            projectionVersion
+                        )
+                        if (!acquired || !isActive) return
                         await projection.handle([event], { client })
                     }
                 ])

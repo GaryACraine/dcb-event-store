@@ -14,6 +14,8 @@ import {
 } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
 import { Projection } from "../projections/projection.js"
+import { registerProjection, serializeCanHandle } from "../projections/registry/projectionRegistry.js"
+import { tryAcquireSharedProjectionLock } from "../projections/projectionLock.js"
 import { dbEventConverter } from "./utils.js"
 import { readSqlWithCursor } from "./readSql.js"
 import { ensureInstalled } from "./ensureInstalled.js"
@@ -92,6 +94,30 @@ export class PostgresEventStore implements EventStore {
 
     async ensureInstalled(): Promise<void> {
         await ensureInstalled(this.pool, this.tableName, this.lockStrategy)
+
+        if (this.inlineProjections.length > 0) {
+            const client = await this.pool.connect()
+            try {
+                await client.query("BEGIN")
+                for (const projection of this.inlineProjections) {
+                    await registerProjection(client, {
+                        name: projection.name,
+                        version: projection.version ?? 1,
+                        type: "i",
+                        kind: projection.kind ?? "unknown",
+                        status: "active",
+                        definition: serializeCanHandle(projection.canHandle)
+                    })
+                    if (projection.init) await projection.init(client)
+                }
+                await client.query("COMMIT")
+            } catch (err) {
+                await client.query("ROLLBACK").catch(() => {})
+                throw err
+            } finally {
+                client.release()
+            }
+        }
     }
 
     // ─── Read ───────────────────────────────────────────────────────
@@ -392,6 +418,13 @@ export class PostgresEventStore implements EventStore {
     /** Filter appended events per projection's canHandle query and dispatch. */
     private async runInlineProjections(client: PoolClient, events: SequencedEvent[]): Promise<void> {
         for (const projection of this.inlineProjections) {
+            const { acquired, isActive } = await tryAcquireSharedProjectionLock(
+                client,
+                projection.name,
+                projection.version ?? 1
+            )
+            if (!acquired || !isActive) continue
+
             const filtered = filterEventsByQuery(events, projection.canHandle)
             if (filtered.length > 0) {
                 await projection.handle(filtered, { client })

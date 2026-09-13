@@ -8,6 +8,7 @@ export interface ProjectionContext {
 export interface Projection {
     name: string
     version?: number
+    kind?: string
     canHandle: Query
     init?: (client: PoolClient) => Promise<void>
     handle: (events: SequencedEvent[], context: ProjectionContext) => Promise<void>

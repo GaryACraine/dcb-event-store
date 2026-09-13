@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from "pg"
 import { LockStrategy } from "./lockStrategy.js"
+import { ensureRegistryInstalled } from "../projections/registry/ensureRegistryInstalled.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 
@@ -254,4 +255,6 @@ const runMigration = async (client: Pool | PoolClient, tableName: string, lockSt
         END;
         $br$ LANGUAGE plpgsql;
     `)
+
+    await ensureRegistryInstalled(client)
 }
