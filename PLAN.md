@@ -267,7 +267,9 @@ package, no Postgres.
 unit spec cases, add three boundary-assertion cases using the existing
 `buildDecisionModel.tests.handlers.ts` fixtures.
 
-**Done when.** Spec green; `docs/examples.md` gains a testing section.
+**Done when.** Spec green; `docs/examples.md` gains a testing section;
+`CLAUDE.md` updated with new key concepts (DcbCommand, Decider, typed errors,
+DeciderSpecification).
 
 ---
 
@@ -700,7 +702,7 @@ pure and would be Easy.
 | Phase | Branch | Status | Bench delta |
 |---|---|---|---|
 | 1 | `phase-1/event-identity` | complete | bench green, no regression |
-| 2 | | not started | |
+| 2 | `phase-2/decider-specification` | complete | N/A (pure core, no append/read/lock changes) |
 | 3 | | not started | |
 | 4 | | not started | |
 | 5 | | not started | |

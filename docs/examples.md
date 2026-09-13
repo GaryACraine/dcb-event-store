@@ -5,10 +5,11 @@ The repository includes CLI applications that implement the [course subscription
 | Example | Reads from | Key concepts |
 |---------|-----------|--------------|
 | `course-manager-cli` | Event stream (on-the-fly) | Core DCB pattern, decision models, command handling |
+| `course-manager-cli-with-decider-specs` | In-memory (no Postgres) | `Decider` type, `DcbCommand`, `DeciderSpecification`, typed domain errors |
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 
-Both require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store.
+Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
 
 ---
 
@@ -190,3 +191,85 @@ Note that idempotency operates at the **store level**, not the application level
 | Store-level retry safety | Not handled | Duplicate `message_id` returns existing position |
 | `recordedAt` on read | Not available | Available as `Date` on every `SequencedEvent` |
 | Metadata queryability | Stored in payload TEXT | Also stored in JSONB `metadata` column, queryable with `->>`|
+
+---
+
+## course-manager-cli-with-decider-specs
+
+**Location:** [`examples/course-manager-cli-with-decider-specs/`](../examples/course-manager-cli-with-decider-specs/)
+
+This example refactors the basic CLI to use the `Decider` pattern with typed commands (`DcbCommand`) and replaces the ad-hoc tests with `DeciderSpecification` -- a fluent given/when/then API that exercises each decider against a `MemoryEventStore`, asserting both the emitted events and the consistency boundary. Tests run entirely in-memory; no PostgreSQL or Docker required.
+
+### What it adds
+
+- **Typed commands** (`Commands.ts`) -- six `DcbCommand` type aliases replacing untyped parameter bags
+- **Decider objects** (`Deciders.ts`) -- the six command handlers expressed as `Decider` values using the `decider()` factory, with the existing `DecisionModels.ts` handler factories
+- **Typed domain errors** -- `IllegalStateError`, `NotFoundError`, and `ValidationError` replace bare `new Error(...)` in decide functions
+- **`DeciderSpecification` tests** (`Api.tests.ts`) -- given/when/then tests for every command, including error state assertions and `.thenCondition()` boundary assertions
+- **`handle()` orchestration** -- `Api.ts` uses `handle(store, decider, command)` instead of inline `buildDecisionModel` + validate + append
+
+### Typed commands
+
+Each command is a plain type alias using `DcbCommand<Type, Data>`, mirroring how events use `DcbEvent`:
+
+```typescript
+type RegisterCourse = DcbCommand<"registerCourse", { id: string; title: string; capacity: number }>
+type SubscribeStudentToCourse = DcbCommand<"subscribeStudentToCourse", { courseId: string; studentId: string }>
+```
+
+Commands are constructed as object literals -- no classes, no `new` keyword:
+
+```typescript
+const cmd: RegisterCourse = { type: "registerCourse", data: { id: "c1", title: "Math", capacity: 30 } }
+```
+
+### Decider pattern
+
+Each decider is a pure value object with two functions:
+
+- `handlers(cmd)` -- returns the `EventHandlerWithState` map parameterised by command fields (e.g., `CourseExists(cmd.data.id)`)
+- `decide(cmd, state)` -- validates business rules against the folded state and returns event(s) or throws a typed error
+
+The `handle()` function orchestrates: build handlers, run `buildDecisionModel` to fold events into state, call `decide`, and append with the returned `appendCondition`.
+
+### DeciderSpecification tests
+
+Tests use the fluent given/when/then API:
+
+```typescript
+// Happy path: assert emitted events
+await DeciderSpecification.for(registerCourse)
+    .given()
+    .when({ type: "registerCourse", data: { id: "c1", title: "Math", capacity: 30 } })
+    .then(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+
+// Error path: assert specific error type and message
+await DeciderSpecification.for(registerCourse)
+    .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+    .when({ type: "registerCourse", data: { id: "c1", title: "Math", capacity: 30 } })
+    .thenThrows(IllegalStateError, (e) => e.message.includes("already exists"))
+
+// Boundary assertion (DCB-specific): verify the append condition covers expected tags
+await DeciderSpecification.for(subscribeStudentToCourse)
+    .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+    .when({ type: "subscribeStudentToCourse", data: { courseId: "c1", studentId: "s1" } })
+    .thenCondition((condition) => {
+        const allTagValues = condition.failIfEventsMatch.items.flatMap((item) => item.tags?.values ?? [])
+        expect(allTagValues).toContain("courseId=c1")
+        expect(allTagValues).toContain("studentId=s1")
+    })
+```
+
+Event comparison ignores store-generated fields (`id`, `recordedAt`, `schemaVersion`) and normalises `Tags` instances to their string arrays.
+
+### How it differs from the basic example
+
+| Aspect | Basic example | Decider specs example |
+|--------|--------------|----------------------|
+| Command types | Untyped parameter bags (`{ id, title, capacity }`) | `DcbCommand<Type, Data>` type aliases |
+| Command handling | Inline `buildDecisionModel` + validate + append | `Decider` object + `handle()` |
+| Error types | Bare `new Error(message)` | `IllegalStateError`, `NotFoundError`, `ValidationError` |
+| Tests | Integration tests against PostgresEventStore (Docker required) | `DeciderSpecification` against `MemoryEventStore` (no Docker) |
+| Test assertions | `expect(...).rejects.toThrow()` | `.then(events)`, `.thenThrows(ErrorType)`, `.thenCondition()` |
+| Boundary testing | Not tested directly | `.thenCondition()` asserts the `AppendCondition` |
+| Events, DecisionModels, Cli | Unchanged | Unchanged |
