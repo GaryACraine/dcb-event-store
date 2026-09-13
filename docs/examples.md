@@ -8,6 +8,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-decider-specs` | In-memory (no Postgres) | `Decider` type, `DcbCommand`, `DeciderSpecification`, typed domain errors |
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
+| `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
 
 Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
 
@@ -273,3 +274,54 @@ Event comparison ignores store-generated fields (`id`, `recordedAt`, `schemaVers
 | Test assertions | `expect(...).rejects.toThrow()` | `.then(events)`, `.thenThrows(ErrorType)`, `.thenCondition()` |
 | Boundary testing | Not tested directly | `.thenCondition()` asserts the `AppendCondition` |
 | Events, DecisionModels, Cli | Unchanged | Unchanged |
+
+---
+
+## course-manager-cli-with-consumer
+
+**Location:** [`examples/course-manager-cli-with-consumer/`](../examples/course-manager-cli-with-consumer/)
+
+This example extends the read model example by replacing `runHandler` with `createConsumer` -- the production-grade consumer API introduced in Phase 3. The domain, events, decision models, projection handler, and read model repository are all unchanged. The differences are in how the projection lifecycle is managed.
+
+### What it adds
+
+- **`createConsumer`** replaces `runHandler` for starting the projection handler. The consumer wraps one or more named processors with shared lifecycle management.
+- **Processor instance lock** -- each processor acquires a session-scoped advisory lock (`P:` namespace), preventing two instances of the same processor from running concurrently. A second instance's promise rejects with "Processor lock not acquired".
+- **CAS-versioned checkpoints** -- the bookmark table gains `version`, `instance_id`, and `last_updated` columns. Checkpoint updates use `WHERE version = $expected` (compare-and-swap) as defense-in-depth against double-processing if a lock is lost.
+- **Start-position policies** -- `startFrom: "BEGINNING"` (default) resumes from the stored checkpoint. `startFrom: "CURRENT"` skips all historical events for a brand-new handler, useful for projections that only care about future events.
+- **Graceful `stop()`** -- `consumer.stop()` aborts all processors via their shared `AbortController` and resolves when all are done, replacing manual `AbortController` + `await promise.catch(() => {})`.
+- **`stopAfter`** -- optional event count limit for testing and one-shot processing.
+
+### Entry point wiring
+
+The [`index.ts`](../examples/course-manager-cli-with-consumer/index.ts) entry point creates a consumer with a single processor configuration:
+
+```typescript
+const consumer = createConsumer({
+    pool,
+    eventStore,
+    processors: [
+        {
+            processorName: PROJECTION_NAME,
+            handlerFactory: client => PostgresCourseSubscriptionsProjection(client),
+            batchSize: 100,
+            startFrom: "BEGINNING"
+        }
+    ]
+})
+```
+
+Shutdown is a single call: `await consumer.stop()`.
+
+### How it differs from the read model example
+
+| Aspect | Read model example | Consumer example |
+|--------|-------------------|-----------------|
+| Handler start | `runHandler()` + manual `AbortController` | `createConsumer()` with named processors |
+| Instance exclusivity | None -- two handlers race | Session-scoped advisory lock per processor |
+| Checkpoint mechanism | Simple `UPDATE SET position` | CAS with `WHERE version = $expected` |
+| Bookmark columns | `handler_id`, `last_sequence_position` | Adds `version`, `instance_id`, `last_updated` |
+| Start position | Always from stored bookmark | Configurable: `BEGINNING` or `CURRENT` |
+| Shutdown | `controller.abort()` + `await promise.catch(() => {})` | `await consumer.stop()` |
+| Stop condition | Signal abort only | Signal abort + `stopAfter` event count |
+| Events, DecisionModels, Projection, Repository, Cli | Unchanged | Unchanged |

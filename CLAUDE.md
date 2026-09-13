@@ -46,6 +46,13 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   (`.thenThrows`), empty results (`.thenNothingHappened`), and the append
   condition / consistency boundary (`.thenCondition`). Pure in-memory, no
   Postgres needed.
+- **Processor** (`createProcessor`) — production event handler with
+  session-scoped instance lock, CAS-versioned checkpoints, and
+  start-position policies (`BEGINNING`, `CURRENT`). `runHandler` is a thin
+  backward-compatible wrapper. The processor lock uses the `P:` advisory
+  lock namespace (distinct from boundary locks per invariant 3).
+- **Consumer** (`createConsumer`) — wraps one or more processors with shared
+  lifecycle. `stop()` aborts all processors and resolves when all are done.
 
 ## Repo shape
 

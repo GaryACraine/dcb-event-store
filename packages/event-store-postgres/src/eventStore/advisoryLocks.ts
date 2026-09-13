@@ -31,6 +31,9 @@ function fnv1a64(input: string): bigint {
  *   filters that span every tag of a type.
  * - Global intent K(ε, ε) — shared lock taken by every writer, and exclusive
  *   lock taken by `Query.all()` readers. Read barrier for the whole stream.
+ * - Processor P(name) — session-scoped lock for processor instance ownership.
+ *   Distinct namespace from boundary locks so a long-held processor lock
+ *   cannot block writers or readers (invariant 3).
  *
  * Intent locks are taken in S-mode by writers so writers do not serialise
  * against each other; readers take them in X-mode for the brief barrier.
@@ -38,11 +41,15 @@ function fnv1a64(input: string): bigint {
 const LEAF_PREFIX = "L:"
 const TYPE_INTENT_PREFIX = "T:"
 const GLOBAL_INTENT_INPUT = "G"
+const PROCESSOR_LOCK_PREFIX = "P:"
 
 export const GLOBAL_INTENT_KEY: bigint = fnv1a64(GLOBAL_INTENT_INPUT)
 
 export const leafKey = (type: string, tag: string): bigint => fnv1a64(`${LEAF_PREFIX}${type}|${tag}`)
 export const typeIntentKey = (type: string): bigint => fnv1a64(`${TYPE_INTENT_PREFIX}${type}`)
+
+/** Processor instance lock key — distinct namespace from boundary locks. */
+export const processorLockKey = (processorName: string): bigint => fnv1a64(`${PROCESSOR_LOCK_PREFIX}${processorName}`)
 
 /**
  * Writer keys: leaf X-locks for content mutex, intent S-locks for read barriers.

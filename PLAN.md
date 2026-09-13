@@ -703,7 +703,7 @@ pure and would be Easy.
 |---|---|---|---|
 | 1 | `phase-1/event-identity` | complete | bench green, no regression |
 | 2 | `phase-2/decider-specification` | complete | N/A (pure core, no append/read/lock changes) |
-| 3 | | not started | |
+| 3 | `phase-3/consumer-hardening` | complete | N/A (processor lock is session-scoped, not in append/read hot path) |
 | 4 | | not started | |
 | 5 | | not started | |
 | 6 | | not started | |
