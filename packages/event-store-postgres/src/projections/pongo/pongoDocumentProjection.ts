@@ -18,6 +18,7 @@ export function pongoDocumentProjection<TDocument extends Record<string, unknown
     return pongoProjection({
         name: options.name,
         version: options.version,
+        kind: "pongo-document",
         canHandle: options.canHandle,
 
         init: async pongo => {

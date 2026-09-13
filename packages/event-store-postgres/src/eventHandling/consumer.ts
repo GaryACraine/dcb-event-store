@@ -12,6 +12,7 @@ export interface ConsumerProcessorConfig {
     pollIntervalMs?: number
     startFrom?: StartPosition
     stopAfter?: number
+    stopWhenCaughtUp?: boolean
 }
 
 export interface ConsumerOptions {
@@ -59,6 +60,7 @@ export function createConsumer(options: ConsumerOptions): RunningConsumer {
             pollIntervalMs: config.pollIntervalMs,
             startFrom: config.startFrom,
             stopAfter: config.stopAfter,
+            stopWhenCaughtUp: config.stopWhenCaughtUp,
             signal: internalController.signal
         })
     )
