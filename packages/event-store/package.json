@@ -17,8 +17,8 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
-        "build": "tsc -p tsconfig.json",
-        "watch": "tsc -w -p tsconfig.json",
+        "build": "tsc -p tsconfig.build.json",
+        "watch": "tsc -w -p tsconfig.build.json",
         "lint": "eslint \"**/*.ts\" .",
         "lint-fix": "eslint \"**/*.ts\" . --fix",
         "prepublishOnly": "test \"$CHANGESET_PUBLISH\" = '1' || (echo 'Use: pnpm run release (from repo root)' && exit 1)"
