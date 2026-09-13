@@ -53,6 +53,25 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   lock namespace (distinct from boundary locks per invariant 3).
 - **Consumer** (`createConsumer`) — wraps one or more processors with shared
   lifecycle. `stop()` aborts all processors and resolves when all are done.
+- **Projection** — formalises read model handlers: `name`, `canHandle` (a DCB
+  `Query` — types + optional tag filters), `handle(events, context)` where
+  `context.client` is the transaction's `PoolClient`, `init` for DDL, `truncate`
+  for cleanup, and `version` for the future registry (Phase 7). The DCB-native
+  improvement over Emmett is that `canHandle` accepts a full `Query`, not just
+  an event-type list.
+- **`rawSqlProjection()`** — factory that wraps a per-event `evolve(event,
+  client)` function into the batch-capable `Projection.handle` interface.
+  Keeps user code simple (handle one event at a time) while the `Projection`
+  interface supports batch processing for future inline projections.
+- **`projectionToProcessor()`** — adapter bridging `Projection` →
+  `ConsumerProcessorConfig` for use with `createConsumer`. Passes the
+  `canHandle` query directly to the processor via the `query` option,
+  avoiding lossy round-tripping through handler `when` keys.
+- **ProjectionSpec** — fluent given/when/then API for testing projections
+  against real Postgres with automatic rollback isolation. Fabricates
+  `SequencedEvent` objects from `DcbEvent` inputs, calls `init` and `handle`,
+  runs user assertions, then rolls back the transaction so tests are isolated
+  without table truncation.
 
 ## Repo shape
 
