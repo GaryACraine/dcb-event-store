@@ -447,46 +447,154 @@ of numbers in the PR. Regression on (a) must be ~0.
 ## 8. Phase 7 — Projection registry and rebuild tooling
 
 **Goal.** Register projections with name + version, detect version changes,
-rebuild a projection from position 0 into a fresh target while the old one
-keeps serving, then swap. Readers and rebuilders coordinate through a shared
-advisory lock.
+rebuild a projection from position 0 while handlers are temporarily skipped,
+then resume. Both inline and async projections participate in the registry.
+Handlers and rebuilders coordinate through a shared/exclusive advisory lock.
 
 **Reference.**
+- `EMT: projections/postgreSQLProjection.ts` — `init()` wrapping to call
+  `registerProjection()` before user DDL (lines 163–183)
 - `EMT: projections/management/projectionManagement.ts`
 - `EMT: schema/projections/registerProjection.ts`,
   `projectionsLocks.ts` — exclusive vs shared advisory lock usage
 - `EMT: projections/locks/tryAcquireProjectionLock.ts`,
   `postgreSQLProjectionLock.ts`
 - `EMT: consumers/rebuildPostgreSQLProjections.ts`
+- `EMT: postgreSQLEventStore.ts` — `handleProjections()` shared lock per
+  projection per handle call (inline path)
+- Emmett projections guide — "Version Your Projections" and "Rebuild From
+  Events" sections
 - Specs: `projections/management/projectionRegistration.int.spec.ts`,
   `projections/locks/postgreSQLProjectionLock.int.spec.ts`,
   `consumers/rebuildPostgreSQLProjections.{unit,int,e2e}.spec.ts`
 
-**Touches.**
-- new `DCB: projections/registry/` with a `_projections` table
-  (`name, version, status, target_suffix, bookmark_position, updated_at`)
-- `DCB: eventStore/advisoryLocks.ts` — `projectionLockKey(name)` in its own
-  namespace
-- `DCB: eventHandling/consumer.ts` — consult registry on start; refuse to run a
-  projection whose registered version is newer than the code's
+**Registry schema.**
 
-**Locking notes.**
-- Emmett: writers to a projection take `pg_try_advisory_xact_lock_shared`,
-  the rebuilder takes the exclusive lock for the swap. Keep that shape. It is
-  a *different* key namespace from boundary locks (CLAUDE.md invariant 3).
-- Rebuild reads via the normal `read()` path, so the barrier already protects
-  it from the commit gap; no special handling.
-- The swap must be a single transaction: rename tables (or Pongo collections),
-  update registry row, bump version, release. Spec that a crash before the
-  swap leaves the old projection untouched and the registry status as
-  `rebuilding`.
+```sql
+CREATE TABLE IF NOT EXISTS _projections (
+    name           TEXT NOT NULL,
+    version        INT NOT NULL DEFAULT 1,
+    type           VARCHAR(1) NOT NULL,    -- 'i' (inline) or 'a' (async)
+    kind           TEXT NOT NULL,           -- 'raw-sql', 'pongo', etc.
+    status         TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'inactive'
+    definition     JSONB NOT NULL DEFAULT '{}'::jsonb,  -- canHandle, metadata
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (name, version)
+)
+```
+
+Each projection factory sets `kind` automatically (`rawSqlProjection` →
+`'raw-sql'`, `pongoProjection` → `'pongo'`, `pongoDocumentProjection` →
+`'pongo-document'`). `definition` stores the projection's serialised
+`canHandle` query and any metadata — useful for operational inspection
+(what event types does this projection handle?) without needing the code.
+
+The only difference from Emmett is no `partition` column (no
+multi-tenancy — §11), so the primary key is `(name, version)` not
+`(name, partition, version)`.
+
+**Registration.**
+
+Both inline and async projections are registered in the `_projections`
+table. Registration is triggered during `projection.init()` — the
+projection factories (`rawSqlProjection`, `pongoProjection`, etc.) wrap
+the user's `init` to call `registerProjection()` first, following
+Emmett's pattern (`postgreSQLProjection.ts:163-183`). Inline projections
+register with `type = 'i'`, async with `type = 'a'`.
+
+`Projection.version` remains optional (default `1`). The registry uses
+`projection.version ?? 1`. This avoids a breaking change to the
+`Projection` interface — all existing projections (Phases 4–6) work
+without modification. When version changes, a new row is created in
+the registry with the new version number.
+
+**Locking.**
+
+**Lock key format:** `R:<projectionName>:<version>`, hashed via
+`fnv1a64` to a bigint, matching the existing namespace convention
+(`L:`, `T:`, `G`, `P:`). DCB has no multi-tenancy/partition concept,
+so the partition segment from Emmett is dropped. Add
+`projectionLockKey(name, version)` in `advisoryLocks.ts`. The lock
+is **transaction-scoped** (`pg_try_advisory_xact_lock_shared` for
+handlers, `pg_advisory_xact_lock` for rebuild), matching the boundary
+lock pattern.
+
+During event handling, `runInlineProjections()` acquires a
+**transaction-scoped shared** projection lock per projection before
+calling `handle`. If the lock cannot be acquired (a rebuild holds the
+exclusive lock) or the projection's status is not `active`, the
+projection is **skipped** for that append. This follows Emmett's
+`handleProjections()` pattern. The brief skip window is acceptable
+because the rebuild will replay all events through the projection from
+position 0, filling any gaps.
+
+The same shared lock pattern applies to the async processor path —
+`projectionToProcessor` wraps the handler to acquire the shared lock
+before processing.
+
+Rebuild reads via the normal `read()` path, so the barrier already
+protects it from the commit gap; no special handling.
+
+**Rebuild mechanism.**
+
+Rebuild uses `rebuildProjection()`, a factory that creates a consumer
+with `truncateOnStart: true` and a `stopAfter` condition that triggers
+when no more events are available (add a `stopWhenCaughtUp` option to
+`createConsumer`). The rebuild flow:
+
+1. Acquire **exclusive** `R:<name>:<version>` lock (blocks handlers
+   from acquiring the shared lock)
+2. Set registry status to `inactive`
+3. Call `projection.truncate()` to clear the read model
+4. Replay all events from position 0 through the projection's
+   `handle`, using the existing `read()` path (barrier-protected)
+5. Set registry status to `active`, update version
+6. Release exclusive lock
+
+For **zero-downtime blue-green rebuilds** (Emmett's recommended
+approach): deploy a new projection version (e.g., version 2) writing
+to a new collection/table (name suffixed with `_v2`). Let it catch up.
+Once current, switch queries to the new collection. Remove the old
+projection. This is the pattern documented in Emmett's projections
+guide (§ "Version Your Projections" and § "Rebuild From Events").
+
+**Touches.**
+- new `DCB: projections/registry/` with the `_projections` table and
+  `registerProjection()`, `getProjectionStatus()`, `setProjectionStatus()`
+- `DCB: projections/rawSqlProjection.ts` — wrap `init` to call
+  `registerProjection()` before user DDL (Emmett pattern)
+- `DCB: projections/pongo/pongoProjection.ts` — same init wrapping
+- `DCB: eventStore/PostgresEventStore.ts` — add shared lock acquisition
+  in `runInlineProjections()` before each `handle` call; skip projection
+  if lock not acquired or status not active
+- `DCB: eventStore/advisoryLocks.ts` — `projectionLockKey(name, version)`
+  in the `R:` namespace
+- `DCB: eventHandling/consumer.ts` — consult registry on start; refuse to
+  run a projection whose registered version is newer than the code's;
+  `projectionToProcessor` wraps handler to acquire shared lock
 
 **Spec.** Port the three Emmett rebuild specs (unit, int, e2e) and the
-registration spec. Add: rebuild while appends continue; final state equals
-a fresh from-zero projection.
+registration spec. Add:
+- registry CRUD operations
+- version mismatch rejection
+- rebuild with concurrent appends; final state equals a fresh from-zero
+  projection
+- inline projection skipped during rebuild window (shared lock blocked by
+  exclusive)
 
-**Done when.** Specs green; a CLI script `pnpm rebuild-projection <name>` in
-`event-store-postgres/bin` documented in `docs/`.
+**Done when.**
+- Specs green: registry CRUD, version mismatch rejection, rebuild
+  with concurrent appends, rebuild final state = from-zero projection,
+  inline projection skipped during rebuild window
+- Existing test suite green
+- New example: `course-manager-cli-with-rebuild` based on
+  `course-manager-cli-with-pongo`
+- `docs/examples.md` updated
+- `PLAN.md` §12 status updated
+- Changeset added
+- `CLAUDE.md` key concepts updated (projection registry, rebuild,
+  projection lock namespace `R:`)
 
 ---
 
@@ -707,7 +815,7 @@ pure and would be Easy.
 | 4 | `phase-4/projection-abstraction` | complete | N/A (no append/read/lock changes) |
 | 5 | `phase-5/pongo-projections` | complete | N/A (no append/read/lock changes) |
 | 6 | `phase-6/inline-projections` | complete | bench pending — no append/read path changes when no inline projections configured |
-| 7 | | not started | |
+| 7 | `phase-7/projection-registry` | complete | N/A (no append/read hot-path changes; shared lock in projection handlers is xact-scoped, not in write path) |
 | 8 | | not started | |
 | 9 | | not started | |
 | 10 | | not started | |

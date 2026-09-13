@@ -102,6 +102,24 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   transaction after inline projections but before COMMIT. Receives the newly
   appended `SequencedEvent[]` and the transaction `PoolClient`. A throw rolls
   back both events and projection writes.
+- **Projection Registry** (`_projections` table) — tracks every projection
+  by `(name, version)` with columns `type` (`'a'` async, `'i'` inline),
+  `kind` (factory origin: `'raw-sql'`, `'pongo'`, `'pongo-document'`),
+  `status` (`'active'` / `'inactive'`), and `definition` (serialised
+  `canHandle` query). Factories auto-register during `init()`;
+  `PostgresEventStore.ensureInstalled()` re-registers inline projections
+  with `type = 'i'`.
+- **Projection Lock** (`R:` namespace) — xact-scoped advisory locks
+  coordinating handlers with rebuilders. Handlers take shared locks
+  (`tryAcquireSharedProjectionLock`) before processing; rebuilders take
+  exclusive locks (`acquireExclusiveProjectionLock`) to block all handlers.
+  The `R:` namespace is distinct from `L:`, `T:`, `G`, and `P:` per
+  invariant 3.
+- **`rebuildProjection()`** — truncate-and-replay orchestration.
+  Deactivates the projection (exclusive lock + status `'inactive'` +
+  truncate + bookmark reset), replays all events with a `stopWhenCaughtUp`
+  consumer, then reactivates (exclusive lock + status `'active'`). Both
+  inline and async handlers skip the projection while it is inactive.
 
 ## Repo shape
 
