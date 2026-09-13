@@ -72,18 +72,34 @@ describe("PongoCourseSubscriptionRepository", () => {
         if (pool) await pool.end()
     })
 
-    async function insertCourseDoc(c: PoolClient, doc: { courseId: string; title: string; capacity: number; subscribedStudents?: any[] }) {
-        await c.query(
-            "INSERT INTO courses (_id, data) VALUES ($1, $2)",
-            [doc.courseId, JSON.stringify({ ...doc, subscribedStudents: doc.subscribedStudents ?? [] })]
-        )
+    async function insertCourseDoc(
+        c: PoolClient,
+        doc: {
+            courseId: string
+            title: string
+            capacity: number
+            subscribedStudents?: { studentId: string; name: string; studentNumber: number }[]
+        }
+    ) {
+        await c.query("INSERT INTO courses (_id, data) VALUES ($1, $2)", [
+            doc.courseId,
+            JSON.stringify({ ...doc, subscribedStudents: doc.subscribedStudents ?? [] })
+        ])
     }
 
-    async function insertStudentDoc(c: PoolClient, doc: { studentId: string; name: string; studentNumber: number; subscribedCourses?: any[] }) {
-        await c.query(
-            "INSERT INTO students (_id, data) VALUES ($1, $2)",
-            [doc.studentId, JSON.stringify({ ...doc, subscribedCourses: doc.subscribedCourses ?? [] })]
-        )
+    async function insertStudentDoc(
+        c: PoolClient,
+        doc: {
+            studentId: string
+            name: string
+            studentNumber: number
+            subscribedCourses?: { courseId: string; title: string; capacity: number }[]
+        }
+    ) {
+        await c.query("INSERT INTO students (_id, data) VALUES ($1, $2)", [
+            doc.studentId,
+            JSON.stringify({ ...doc, subscribedCourses: doc.subscribedCourses ?? [] })
+        ])
     }
 
     describe("findCourseById", () => {
@@ -147,9 +163,7 @@ describe("PongoCourseSubscriptionRepository", () => {
                 studentId: STUDENT_1.id,
                 name: STUDENT_1.name,
                 studentNumber: STUDENT_1.studentNumber,
-                subscribedCourses: [
-                    { courseId: COURSE_1.id, title: COURSE_1.title, capacity: COURSE_1.capacity }
-                ]
+                subscribedCourses: [{ courseId: COURSE_1.id, title: COURSE_1.title, capacity: COURSE_1.capacity }]
             })
 
             const student = await repository.findStudentById(STUDENT_1.id)

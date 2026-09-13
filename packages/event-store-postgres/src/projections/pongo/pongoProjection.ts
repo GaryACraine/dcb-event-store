@@ -29,14 +29,6 @@ function createTransactionPongoClient(client: PoolClient): PongoClient {
     })
 }
 
-function createStandalonePongoClient(connectionString: string): PongoClient {
-    return pongoClient({
-        driver: pongoDriver,
-        connectionString,
-        schema: { autoMigration: "CreateOrUpdate" }
-    })
-}
-
 export function pongoProjection(options: PongoProjectionOptions): Projection {
     return {
         name: options.name,

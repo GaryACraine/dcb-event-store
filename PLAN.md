@@ -705,7 +705,7 @@ pure and would be Easy.
 | 2 | `phase-2/decider-specification` | complete | N/A (pure core, no append/read/lock changes) |
 | 3 | `phase-3/consumer-hardening` | complete | N/A (processor lock is session-scoped, not in append/read hot path) |
 | 4 | `phase-4/projection-abstraction` | complete | N/A (no append/read/lock changes) |
-| 5 | | not started | |
+| 5 | `phase-5/pongo-projections` | complete | N/A (no append/read/lock changes) |
 | 6 | | not started | |
 | 7 | | not started | |
 | 8 | | not started | |

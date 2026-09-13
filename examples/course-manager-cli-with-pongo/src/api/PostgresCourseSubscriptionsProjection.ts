@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Query, SequencedEvent } from "@dcb-es/event-store"
 import { pongoProjection, PongoProjectionContext } from "@dcb-es/event-store-postgres"
 
@@ -125,9 +126,7 @@ export const courseSubscriptionsProjection = pongoProjection({
                             { _id: courseId },
                             {
                                 $set: {
-                                    subscribedStudents: course.subscribedStudents.filter(
-                                        s => s.studentId !== studentId
-                                    )
+                                    subscribedStudents: course.subscribedStudents.filter(s => s.studentId !== studentId)
                                 }
                             }
                         )
@@ -140,9 +139,7 @@ export const courseSubscriptionsProjection = pongoProjection({
                             { _id: studentId },
                             {
                                 $set: {
-                                    subscribedCourses: student.subscribedCourses.filter(
-                                        c => c.courseId !== courseId
-                                    )
+                                    subscribedCourses: student.subscribedCourses.filter(c => c.courseId !== courseId)
                                 }
                             }
                         )

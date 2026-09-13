@@ -72,6 +72,18 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   `SequencedEvent` objects from `DcbEvent` inputs, calls `init` and `handle`,
   runs user assertions, then rolls back the transaction so tests are isolated
   without table truncation.
+- **`pongoProjection()`** — factory for Pongo JSONB read models. The handler
+  receives a `PongoProjectionContext` with a `pongo: PongoClient` that shares
+  the processor's `PoolClient` transaction via dumbo's
+  `pgAmbientPoolClientPool`, so projection writes and bookmark advances commit
+  atomically. `init` and `truncate` also receive a transaction-scoped Pongo
+  client. Requires optional peer deps `@event-driven-io/pongo` and
+  `@event-driven-io/dumbo`.
+- **`pongoDocumentProjection()`** — convenience factory for the common
+  one-document-per-entity pattern. Groups events by a caller-supplied
+  `getDocumentId`, loads the existing document, folds events through `evolve`,
+  and upserts (or deletes if `evolve` returns `null`). Built on top of
+  `pongoProjection()`.
 
 ## Repo shape
 

@@ -42,7 +42,8 @@ export function pongoDocumentProjection<TDocument extends Record<string, unknown
             }
 
             for (const [id, docEvents] of groupedEvents) {
-                // Load existing document
+                // Pongo's filter/document types require casts when using _id directly
+                /* eslint-disable @typescript-eslint/no-explicit-any */
                 const existing = await collection.findOne({ _id: id } as any)
                 let document: TDocument | null = existing
                     ? (stripPongoMetadata(existing) as TDocument)
@@ -50,23 +51,20 @@ export function pongoDocumentProjection<TDocument extends Record<string, unknown
                       ? options.initialState()
                       : null
 
-                // Fold through events
                 for (const event of docEvents) {
                     document = options.evolve(document, event)
                 }
 
                 if (document === null) {
-                    // evolve returned null — delete the document
                     if (existing) {
                         await collection.deleteOne({ _id: id } as any)
                     }
                 } else if (existing) {
-                    // Update existing document
                     await collection.replaceOne({ _id: id } as any, document as any)
                 } else {
-                    // Insert new document
                     await collection.insertOne({ _id: id, ...document } as any)
                 }
+                /* eslint-enable @typescript-eslint/no-explicit-any */
             }
         },
 
@@ -77,7 +75,14 @@ export function pongoDocumentProjection<TDocument extends Record<string, unknown
     })
 }
 
+const PONGO_META_KEYS = new Set(["_id", "_version", "_partition", "_archived", "_created", "_updated", "_etag"])
+
 function stripPongoMetadata(doc: Record<string, unknown>): Record<string, unknown> {
-    const { _id, _version, _partition, _archived, _created, _updated, _etag, ...rest } = doc
-    return rest
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(doc)) {
+        if (!PONGO_META_KEYS.has(key)) {
+            result[key] = value
+        }
+    }
+    return result
 }

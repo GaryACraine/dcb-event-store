@@ -1,4 +1,5 @@
-import { Pool, PoolClient } from "pg"
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Pool } from "pg"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { Query, Tags, DcbEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
@@ -79,12 +80,7 @@ const courseProjection = pongoProjection({
     name: "PongoCourseProjection",
     canHandle: Query.fromItems([
         {
-            types: [
-                "courseWasRegistered",
-                "studentWasRegistered",
-                "studentWasSubscribed",
-                "studentWasUnsubscribed"
-            ]
+            types: ["courseWasRegistered", "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"]
         }
     ]),
     init: async pongo => {
@@ -120,27 +116,23 @@ const courseProjection = pongoProjection({
                 case "studentWasSubscribed": {
                     const courseId = data.courseId as string
                     const studentId = data.studentId as string
-                    await courses.updateOne(
-                        { _id: courseId } as any,
-                        { $push: { subscribedStudents: studentId } as any }
-                    )
-                    await students.updateOne(
-                        { _id: studentId } as any,
-                        { $push: { subscribedCourses: courseId } as any }
-                    )
+                    await courses.updateOne({ _id: courseId } as any, {
+                        $push: { subscribedStudents: studentId } as any
+                    })
+                    await students.updateOne({ _id: studentId } as any, {
+                        $push: { subscribedCourses: courseId } as any
+                    })
                     break
                 }
                 case "studentWasUnsubscribed": {
                     const courseId = data.courseId as string
                     const studentId = data.studentId as string
-                    await courses.updateOne(
-                        { _id: courseId } as any,
-                        { $pull: { subscribedStudents: studentId } as any }
-                    )
-                    await students.updateOne(
-                        { _id: studentId } as any,
-                        { $pull: { subscribedCourses: courseId } as any }
-                    )
+                    await courses.updateOne({ _id: courseId } as any, {
+                        $pull: { subscribedStudents: studentId } as any
+                    })
+                    await students.updateOne({ _id: studentId } as any, {
+                        $pull: { subscribedCourses: courseId } as any
+                    })
                     break
                 }
             }
@@ -180,9 +172,7 @@ describe("pongoProjection", () => {
             await courseProjection.handle([event], { client })
 
             // Verify it's visible within the transaction
-            const result = await client.query(
-                "SELECT data FROM courses WHERE _id = 'c1'"
-            )
+            const result = await client.query("SELECT data FROM courses WHERE _id = 'c1'")
             expect(result.rows).toHaveLength(1)
             const doc = result.rows[0].data
             expect(doc.title).toBe("Math")
@@ -238,18 +228,12 @@ describe("pongoProjection", () => {
             await courseProjection.init!(client)
 
             const events = [
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                    1
-                ),
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
                 toSequencedEvent(
                     new StudentWasRegisteredEvent({ studentId: "s1", name: "Alice", studentNumber: 1 }),
                     2
                 ),
-                toSequencedEvent(
-                    new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }),
-                    3
-                )
+                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }), 3)
             ]
 
             await courseProjection.handle(events, { client })
@@ -286,11 +270,7 @@ describe("pongoDocumentProjection", () => {
         name: "PongoCourseDocProjection",
         canHandle: Query.fromItems([
             {
-                types: [
-                    "courseWasRegistered",
-                    "studentWasSubscribed",
-                    "studentWasUnsubscribed"
-                ]
+                types: ["courseWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"]
             }
         ]),
         collectionName: "course_docs",
@@ -318,9 +298,7 @@ describe("pongoDocumentProjection", () => {
                     if (!doc) return null
                     return {
                         ...doc,
-                        subscribedStudents: doc.subscribedStudents.filter(
-                            s => s !== (data.studentId as string)
-                        )
+                        subscribedStudents: doc.subscribedStudents.filter(s => s !== (data.studentId as string))
                     }
                 default:
                     return doc
@@ -335,14 +313,8 @@ describe("pongoDocumentProjection", () => {
             await courseDocProjection.init!(client)
 
             const events = [
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                    1
-                ),
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c2", title: "Science", capacity: 25 }),
-                    2
-                )
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c2", title: "Science", capacity: 25 }), 2)
             ]
 
             await courseDocProjection.handle(events, { client })
@@ -368,22 +340,10 @@ describe("pongoDocumentProjection", () => {
             await courseDocProjection.init!(client)
 
             const events = [
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                    1
-                ),
-                toSequencedEvent(
-                    new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }),
-                    2
-                ),
-                toSequencedEvent(
-                    new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s2" }),
-                    3
-                ),
-                toSequencedEvent(
-                    new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }),
-                    4
-                )
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
+                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }), 2),
+                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s2" }), 3),
+                toSequencedEvent(new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }), 4)
             ]
 
             await courseDocProjection.handle(events, { client })
@@ -414,10 +374,7 @@ describe("pongoDocumentProjection", () => {
             await projection.init!(client)
 
             const events = [
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                    1
-                )
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1)
             ]
 
             await projection.handle(events, { client })
@@ -438,10 +395,7 @@ describe("pongoDocumentProjection", () => {
             await courseDocProjection.init!(client)
 
             const events = [
-                toSequencedEvent(
-                    new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                    1
-                )
+                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1)
             ]
             await courseDocProjection.handle(events, { client })
 
@@ -523,9 +477,7 @@ describe("ProjectionSpec with pongoProjection", () => {
     test("ProjectionSpec with pongoDocumentProjection", async () => {
         const courseDocProjection = pongoDocumentProjection<CourseDoc>({
             name: "SpecCourseDocProjection",
-            canHandle: Query.fromItems([
-                { types: ["courseWasRegistered", "studentWasSubscribed"] }
-            ]),
+            canHandle: Query.fromItems([{ types: ["courseWasRegistered", "studentWasSubscribed"] }]),
             collectionName: "spec_course_docs",
             getDocumentId: event => {
                 const data = event.event.data as Record<string, unknown>
@@ -593,9 +545,7 @@ describe("ProjectionSpec with pongoProjection", () => {
         // This test verifies the canHandle query structure is correct.
         await ProjectionSpec.for({ projection: taggedProjection, pool })
             .given([])
-            .when([
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
-            ])
+            .when([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM tagged_courses WHERE _id = 'c1'")
                 expect(result.rows).toHaveLength(1)
