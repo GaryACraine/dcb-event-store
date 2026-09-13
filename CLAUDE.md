@@ -84,6 +84,24 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   `getDocumentId`, loads the existing document, folds events through `evolve`,
   and upserts (or deletes if `evolve` returns `null`). Built on top of
   `pongoProjection()`.
+- **Inline projections** (`inlineProjections` option) — projections that run
+  inside the `append` transaction itself, before COMMIT. The read model is
+  consistent the instant `append` returns; no `waitUntilProcessed`, no
+  consumer, no bookmark table. Trade-off: advisory locks are held for the
+  duration of the projection code, reducing write concurrency on overlapping
+  boundaries (Invariant 6). When no inline projections are configured, the
+  default autocommit path is preserved with zero overhead. Inline projections
+  use client-side pre-generated `message_id` UUIDs to read back appended
+  events within the transaction (querying by `message_id = ANY($ids)` rather
+  than a position range). This eliminates a race condition where concurrent
+  non-overlapping writers under READ COMMITTED isolation could commit events
+  into the position range between the HWM snapshot and the INSERT, causing
+  projections to process foreign events. The COPY writer (`copyWriter.ts`)
+  already uses the same client-side UUID pattern.
+- **`onBeforeCommit` hook** — optional callback that runs inside the append
+  transaction after inline projections but before COMMIT. Receives the newly
+  appended `SequencedEvent[]` and the transaction `PoolClient`. A throw rolls
+  back both events and projection writes.
 
 ## Repo shape
 
