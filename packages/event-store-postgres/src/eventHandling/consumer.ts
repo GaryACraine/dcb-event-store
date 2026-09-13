@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { EventHandler, EventStore } from "@dcb-es/event-store"
+import { EventHandler, EventStore, Query } from "@dcb-es/event-store"
 import { createProcessor, RunningProcessor } from "./processor.js"
 import { StartPosition } from "./startPositions.js"
 
@@ -7,6 +7,7 @@ export interface ConsumerProcessorConfig {
     processorName: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handlerFactory: (client: PoolClient) => EventHandler<any, any>
+    query?: Query
     batchSize?: number
     pollIntervalMs?: number
     startFrom?: StartPosition
@@ -52,6 +53,7 @@ export function createConsumer(options: ConsumerOptions): RunningConsumer {
             eventStore: options.eventStore,
             processorName: config.processorName,
             handlerFactory: config.handlerFactory,
+            query: config.query,
             bookmarkTableName: options.bookmarkTableName,
             batchSize: config.batchSize,
             pollIntervalMs: config.pollIntervalMs,

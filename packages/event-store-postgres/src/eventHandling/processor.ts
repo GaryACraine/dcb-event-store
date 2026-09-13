@@ -11,6 +11,7 @@ export interface ProcessorOptions {
     processorName: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handlerFactory: (client: PoolClient) => EventHandler<any, any>
+    query?: Query
     bookmarkTableName?: string
     batchSize?: number
     pollIntervalMs?: number
@@ -56,6 +57,7 @@ export function createProcessor(options: ProcessorOptions): RunningProcessor {
         eventStore,
         processorName,
         handlerFactory,
+        query: options.query,
         tableName,
         pollIntervalMs,
         startFrom,
@@ -73,6 +75,7 @@ interface InternalProcessorOptions {
     processorName: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handlerFactory: (client: PoolClient) => EventHandler<any, any>
+    query?: Query
     tableName: string
     pollIntervalMs: number
     startFrom: StartPosition
@@ -125,20 +128,25 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             currentVersion++
         }
 
-        // 4. Build query from handler
-        let sampleHandler
-        try {
-            sampleHandler = handlerFactory(null as unknown as PoolClient)
-        } catch {
-            throw new Error(`handlerFactory for "${processorName}" must not access the client during construction.`)
+        // 4. Build query from handler (or use pre-built query from options)
+        let query: Query
+        if (opts.query) {
+            query = opts.query
+        } else {
+            let sampleHandler
+            try {
+                sampleHandler = handlerFactory(null as unknown as PoolClient)
+            } catch {
+                throw new Error(`handlerFactory for "${processorName}" must not access the client during construction.`)
+            }
+            const types = Object.keys(sampleHandler.when) as string[]
+            query =
+                types.length === 0
+                    ? Query.all()
+                    : Query.fromItems([
+                          sampleHandler.tagFilter ? { types, tags: sampleHandler.tagFilter as Tags } : { types }
+                      ])
         }
-        const types = Object.keys(sampleHandler.when) as string[]
-        const query =
-            types.length === 0
-                ? Query.all()
-                : Query.fromItems([
-                      sampleHandler.tagFilter ? { types, tags: sampleHandler.tagFilter as Tags } : { types }
-                  ])
 
         // 5. Subscribe for events — subscribe() handles LISTEN + read + poll internally
         let processedCount = 0

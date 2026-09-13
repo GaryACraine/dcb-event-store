@@ -704,10 +704,27 @@ pure and would be Easy.
 | 1 | `phase-1/event-identity` | complete | bench green, no regression |
 | 2 | `phase-2/decider-specification` | complete | N/A (pure core, no append/read/lock changes) |
 | 3 | `phase-3/consumer-hardening` | complete | N/A (processor lock is session-scoped, not in append/read hot path) |
-| 4 | | not started | |
+| 4 | `phase-4/projection-abstraction` | complete | N/A (no append/read/lock changes) |
 | 5 | | not started | |
 | 6 | | not started | |
 | 7 | | not started | |
 | 8 | | not started | |
 | 9 | | not started | |
 | 10 | | not started | |
+
+## 13. Known issues
+
+### 13.1 IDE `@test` path alias not resolved in VS Code
+
+**Status:** open (post `chore/tsconfig-ide-fix` merge)
+
+Despite the `chore/tsconfig-ide-fix` PR (split `tsconfig.json` / `tsconfig.build.json`,
+added `paths` with `@test/*` mapping to `../../test/*`), VS Code still reports
+`Cannot find module '@test/testPgDbPool' or its corresponding type declarations (ts2307)`
+in example packages (e.g.
+`examples/course-manager-cli-with-readmodel/src/…/PostgresCourseSubscriptionRepository.tests.ts:7`).
+Restarting VS Code, reloading the developer window, and restarting the TS server
+have all been tried without effect.
+
+Build and tests pass — this is purely an IDE diagnostic issue. Investigate further
+when time allows; does not block feature work.

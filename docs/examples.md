@@ -9,6 +9,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 | `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
+| `course-manager-cli-with-projections` | PostgreSQL read model | `Projection`, `rawSqlProjection`, `projectionToProcessor`, `ProjectionSpec` |
 
 Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
 
@@ -325,3 +326,91 @@ Shutdown is a single call: `await consumer.stop()`.
 | Shutdown | `controller.abort()` + `await promise.catch(() => {})` | `await consumer.stop()` |
 | Stop condition | Signal abort only | Signal abort + `stopAfter` event count |
 | Events, DecisionModels, Projection, Repository, Cli | Unchanged | Unchanged |
+
+---
+
+## course-manager-cli-with-projections
+
+**Location:** [`examples/course-manager-cli-with-projections/`](../examples/course-manager-cli-with-projections/)
+
+This example extends the consumer example by replacing the ad-hoc `EventHandler` factory with the `Projection` abstraction. The domain, events, decision models, and read model repository are all unchanged. The differences are in how the projection handler is defined and wired to the consumer.
+
+### What it adds
+
+- **`rawSqlProjection`** replaces the hand-written `EventHandler` factory. The projection declares its name, the events it handles via a `canHandle` Query, an `init` function for DDL, an `evolve` function for per-event SQL, and an optional `truncate` function for cleanup.
+- **`projectionToProcessor`** bridges the `Projection` to a `ConsumerProcessorConfig`, so it can be passed directly to `createConsumer`. The adapter extracts the query from `canHandle` and passes it to the processor, avoiding lossy round-tripping through `when` keys.
+- **`ProjectionSpec`** tests the projection in isolation against a real Postgres database with automatic rollback. The given/when/then API fabricates `SequencedEvent` objects from `DcbEvent` inputs, calls `init` and `handle`, then runs user assertions inside a transaction that is rolled back after the assertion completes.
+- **`canHandle` is a full `Query`**, not just an event-type list. This is the DCB-native improvement over Emmett's projections: tag filters in the query are passed through to the event store subscription, so the processor only receives events matching the full query (types + optional tags).
+
+### Entry point wiring
+
+The [`index.ts`](../examples/course-manager-cli-with-projections/index.ts) entry point uses `projectionToProcessor` to convert the projection into a consumer processor configuration:
+
+```typescript
+import { createConsumer, projectionToProcessor, ensureHandlersInstalled } from "@dcb-es/event-store-postgres"
+import { courseSubscriptionsProjection } from "./src/api/PostgresCourseSubscriptionsProjection.js"
+
+// Init read model tables
+const initClient = await pool.connect()
+await courseSubscriptionsProjection.init!(initClient)
+initClient.release()
+
+const consumer = createConsumer({
+    pool,
+    eventStore,
+    processors: [
+        projectionToProcessor(courseSubscriptionsProjection, {
+            batchSize: 100,
+            startFrom: "BEGINNING"
+        })
+    ]
+})
+```
+
+### Projection definition
+
+The projection is defined using `rawSqlProjection`, which wraps a per-event `evolve` function into the batch-capable `Projection.handle` interface:
+
+```typescript
+import { rawSqlProjection } from "@dcb-es/event-store-postgres"
+import { Query } from "@dcb-es/event-store"
+
+export const courseSubscriptionsProjection = rawSqlProjection({
+    name: "CourseProjection",
+    canHandle: Query.fromItems([{
+        types: [
+            "courseWasRegistered", "courseTitleWasChanged", "courseCapacityWasChanged",
+            "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"
+        ]
+    }]),
+    init: async (client) => { /* CREATE TABLE IF NOT EXISTS ... */ },
+    evolve: async (event, client) => { /* switch on event.event.type */ },
+    truncate: async (client) => { /* TRUNCATE ... */ }
+})
+```
+
+### ProjectionSpec tests
+
+The example includes `ProjectionSpec` tests that verify the projection logic in isolation, with automatic rollback:
+
+```typescript
+await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
+    .given([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+    .when([new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })])
+    .then(async (client) => {
+        const result = await client.query("SELECT * FROM subscriptions WHERE course_id = 'c1'")
+        expect(result.rows).toHaveLength(1)
+    })
+```
+
+### How it differs from the consumer example
+
+| Aspect | Consumer example | Projections example |
+|--------|-----------------|-------------------|
+| Projection definition | `EventHandler` factory function | `rawSqlProjection()` with `canHandle` Query |
+| Consumer wiring | Manual `{ processorName, handlerFactory }` | `projectionToProcessor(projection)` |
+| Event subscription query | Introspected from `when` keys + `tagFilter` | Passed directly from `canHandle` Query |
+| DDL management | Separate `installPostgresCourseSubscriptionsRepository` function | `projection.init()` on the projection itself |
+| Cleanup | Manual `TRUNCATE` in test teardown | `projection.truncate()` method |
+| Isolated projection tests | Not available | `ProjectionSpec` with rollback isolation |
+| Events, DecisionModels, Repository, Api, Cli | Unchanged | Unchanged |
