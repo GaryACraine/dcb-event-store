@@ -1,8 +1,11 @@
 {
     "extends": "../../tsconfig.json",
     "compilerOptions": {
-        "outDir": "./dist"
+        "outDir": "./dist",
+        "noEmit": true,
+        "paths": {
+            "@test/*": ["../../test/*", "../../test/*.ts"]
+        }
     },
-    "include": ["./src/**/*", "./index.ts"],
-    "exclude": ["**/*.tests.ts"]
+    "include": ["./src/**/*", "./index.ts"]
 }

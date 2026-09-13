@@ -10,7 +10,8 @@
         "sourceMap": true,
         "declaration": true,
         "declarationMap": true,
-        "strict": true
+        "strict": true,
+        "types": ["vitest/globals"]
     },
 
     "exclude": ["node_modules", "dist"]
