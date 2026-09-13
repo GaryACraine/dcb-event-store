@@ -10,6 +10,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 | `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
 | `course-manager-cli-with-projections` | PostgreSQL read model | `Projection`, `rawSqlProjection`, `projectionToProcessor`, `ProjectionSpec` |
+| `course-manager-cli-with-pongo` | Pongo JSONB documents | `pongoProjection`, Pongo collections, JSONB document read models |
 
 Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
 
@@ -414,3 +415,75 @@ await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
 | Cleanup | Manual `TRUNCATE` in test teardown | `projection.truncate()` method |
 | Isolated projection tests | Not available | `ProjectionSpec` with rollback isolation |
 | Events, DecisionModels, Repository, Api, Cli | Unchanged | Unchanged |
+
+---
+
+## course-manager-cli-with-pongo
+
+**Location:** [`examples/course-manager-cli-with-pongo/`](../examples/course-manager-cli-with-pongo/)
+
+This example extends the projections example by replacing the three relational tables (`courses`, `students`, `subscriptions`) with two Pongo JSONB document collections. Each document embeds its related entities directly -- courses contain their subscribed students, and students contain their subscribed courses. The write side is unchanged.
+
+### What it adds
+
+- **`pongoProjection`** replaces `rawSqlProjection`. The projection handler receives a `PongoProjectionContext` with a `pongo` client that shares the processor's `PoolClient` transaction, so projection writes and bookmark advances commit atomically.
+- **Pongo JSONB collections** replace relational tables. Two collections (`courses`, `students`) store rich documents with embedded related entities instead of three normalised tables with JOIN queries.
+- **`PongoCourseSubscriptionsRepository`** replaces the SQL-based repository. Read queries select from the Pongo `data` JSONB column and map the embedded document structure to the same `Course` and `Student` interfaces.
+- **Transaction-scoped Pongo client** -- the `pongoProjection` factory creates a Pongo client backed by the processor's existing `PoolClient` via dumbo's `pgAmbientPoolClientPool`. This means Pongo operations participate in the same transaction as the event store checkpoint advance.
+
+### Entry point wiring
+
+The [`index.ts`](../examples/course-manager-cli-with-pongo/index.ts) entry point is nearly identical to the projections example. The only difference is the projection import:
+
+```typescript
+import { pongoProjection } from "@dcb-es/event-store-postgres"
+```
+
+The `projectionToProcessor` adapter works unchanged with `pongoProjection` -- it implements the same `Projection` interface.
+
+### Document model
+
+Instead of three normalised tables, the read model uses two Pongo JSONB collections:
+
+| Collection | Document shape | Purpose |
+|------------|---------------|---------|
+| `courses` | `{ courseId, title, capacity, subscribedStudents: [{ studentId, name, studentNumber }] }` | Course with embedded subscribers |
+| `students` | `{ studentId, name, studentNumber, subscribedCourses: [{ courseId, title, capacity }] }` | Student with embedded courses |
+
+Pongo manages these as PostgreSQL tables with a `_id TEXT PRIMARY KEY` and `data JSONB NOT NULL` column. The repository reads the `data` column directly via SQL.
+
+### Projection definition
+
+The projection is defined using `pongoProjection`, which provides a `PongoProjectionContext` with the transaction-scoped Pongo client:
+
+```typescript
+import { pongoProjection, PongoProjectionContext } from "@dcb-es/event-store-postgres"
+
+export const courseSubscriptionsProjection = pongoProjection({
+    name: "CourseProjection",
+    canHandle: Query.fromItems([{ types: [...] }]),
+    init: async (pongo) => {
+        await pongo.db().collection("courses").createCollection()
+        await pongo.db().collection("students").createCollection()
+    },
+    handle: async (events, context: PongoProjectionContext) => {
+        const courses = context.pongo.db().collection("courses")
+        // Use Pongo's MongoDB-like API: insertOne, updateOne, findOne, $set, $push
+    }
+})
+```
+
+### How it differs from the projections example
+
+| Aspect | Projections example | Pongo example |
+|--------|-------------------|--------------|
+| Projection factory | `rawSqlProjection()` | `pongoProjection()` |
+| Handler context | `ProjectionContext` with `client: PoolClient` | `PongoProjectionContext` with `pongo: PongoClient` |
+| Read model storage | Three relational tables with SQL DDL | Two Pongo JSONB document collections |
+| Write operations | Raw SQL (`INSERT`, `UPDATE`, `DELETE`) | Pongo API (`insertOne`, `updateOne`, `$set`, `$push`) |
+| Read operations | SQL JOINs across three tables | Single JSONB document read per query |
+| Repository | `PostgresCourseSubscriptionsRepository` with SQL queries | `PongoCourseSubscriptionsRepository` reading `data` JSONB column |
+| Schema setup | `CREATE TABLE IF NOT EXISTS` in `init` | `collection.createCollection()` in `init` |
+| Test assertions | Query relational columns | Query Pongo `data` JSONB column |
+| Dependencies | `pg` only | `@event-driven-io/pongo`, `@event-driven-io/dumbo`, `pg` |
+| Events, DecisionModels, Api, Cli | Unchanged | Unchanged |

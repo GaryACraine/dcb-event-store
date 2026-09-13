@@ -19,3 +19,7 @@ export type { RawSqlProjectionOptions } from "./src/projections/rawSqlProjection
 export { projectionToProcessor } from "./src/projections/projectionAdapter.js"
 export type { ProjectionProcessorOptions } from "./src/projections/projectionAdapter.js"
 export { ProjectionSpec } from "./src/projections/projectionSpec.js"
+export { pongoProjection } from "./src/projections/pongo/pongoProjection.js"
+export type { PongoProjectionOptions, PongoProjectionContext } from "./src/projections/pongo/pongoProjection.js"
+export { pongoDocumentProjection } from "./src/projections/pongo/pongoDocumentProjection.js"
+export type { PongoDocumentProjectionOptions } from "./src/projections/pongo/pongoDocumentProjection.js"
