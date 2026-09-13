@@ -21,6 +21,15 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   via `runHandler`.
 - **SequencePosition** — global ordering of events; the basis for conditions,
   bookmarks and read barriers.
+- **Event identity** (`message_id`) — every stored event carries a UUID
+  `message_id` (auto-generated or caller-supplied via `DcbEvent.id`). A unique
+  index enforces deduplication: appending events with a previously-seen
+  `message_id` is a silent no-op (`ON CONFLICT DO NOTHING`), making retries
+  safe. `SequencedEvent` exposes `id` and `recordedAt` on the read side.
+- **Event metadata columns** — the event table has four columns added in
+  Phase 1 alongside `payload`: `message_id UUID`, `recorded_at TIMESTAMPTZ`,
+  `schema_version TEXT` (default `'1'`), `metadata JSONB` (default `{}`).
+  Schema migration is idempotent (`ADD COLUMN IF NOT EXISTS`).
 
 ## Repo shape
 
@@ -70,17 +79,23 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
    cannot collide with boundary lock keys. Document the namespace in
    `advisoryLocks.ts`.
 4. **`payload` stays TEXT.** The COPY writer depends on it and the bench
-   package was tuned for it. New columns (`message_id`, `recorded_at`,
-   `schema_version`, `metadata JSONB`) go alongside `payload`, never inside it.
-   JSONB belongs in read models (Pongo), not on the event table.
-5. **Anything that widens the append transaction extends lock hold time.**
+   package was tuned for it. The Phase 1 columns (`message_id UUID`,
+   `recorded_at TIMESTAMPTZ`, `schema_version TEXT`, `metadata JSONB`) sit
+   alongside `payload`, never inside it. Any future columns follow the same
+   rule. JSONB belongs in read models (Pongo), not on the event table.
+5. **`message_id` uniqueness is load-bearing.** The `message_id_idx` unique
+   index powers idempotent appends (`ON CONFLICT (message_id) DO NOTHING`).
+   Do not remove, make nullable, or change to a non-unique index. The
+   `dcb_append` function returns the existing `sequence_position` when all
+   rows are duplicates, so callers see a valid position on replay.
+6. **Anything that widens the append transaction extends lock hold time.**
    Inline projections and before-commit hooks run inside the same transaction
    as `dcb_append`; that directly trades against write concurrency. Benchmark
    `contention` with and without the feature enabled and record the delta.
-6. **Poolers.** Advisory locks require session-mode connections. Do not add
+7. **Poolers.** Advisory locks require session-mode connections. Do not add
    code paths that assume a transaction-mode pooler (PgBouncer, Supavisor,
    RDS Proxy) unless using `rowLocks()`.
-7. **Do not touch `packages/event-store-bench` scenarios** except to add new
+8. **Do not touch `packages/event-store-bench` scenarios** except to add new
    ones. Existing scenarios are the regression baseline.
 
 ## Branching rules — mandatory
