@@ -145,6 +145,19 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   if present, echoes it on the response; if absent, generates a UUID v4
   via `crypto.randomUUID()`. Always on by default, opt-out via
   `disableTraceIdMiddleware`. Defined in `event-store-express`.
+- **`ApiSpecification`** — fluent given/when/then DSL for testing Express API
+  routes against a `MemoryEventStore`. `ApiSpecification.for({ configureApi })`
+  → `.existingEvents(...events)` → `.when(request)` → `.then(responseAssert,
+  ...expectedEvents)`. Each chain creates a fresh store and app for isolation.
+  New events are detected by recording the store position after seeding and
+  reading all events after that position post-request. Helpers:
+  `expectResponse(status, { body?, headers? })`, `expectError(status,
+  problem?)`. Also exposes `thenEvents()` (events-only) and
+  `thenNothingAppended()`. Defined in `event-store-express`.
+- **`ApiE2ESpecification`** — same factory pattern but builds state through
+  prior HTTP requests rather than event seeding. `.existingRequests(...requests)`
+  runs setup requests before the `.when()` request. Response-only assertions (no
+  event spy). Defined in `event-store-express`.
 
 ## Repo shape
 

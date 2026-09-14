@@ -103,9 +103,7 @@ describe("ApiE2ESpecification", () => {
             .then(expectError(422))
 
         // Second chain — x does not exist
-        await spec
-            .when(agent => agent.post("/items").send({ id: "x", name: "X" }))
-            .then(expectResponse(201))
+        await spec.when(agent => agent.post("/items").send({ id: "x", name: "X" })).then(expectResponse(201))
     })
 
     it("supports when() without existingRequests", async () => {

@@ -33,7 +33,7 @@ export function configureRoutes(store: EventStore): WebApiSetup {
         router.put(
             "/courses/:courseId/capacity",
             on(async req => {
-                const { courseId } = req.params
+                const courseId = req.params["courseId"] as string
                 const { newCapacity } = req.body as { newCapacity: number }
                 await handle(store, updateCourseCapacity, {
                     type: "updateCourseCapacity",
@@ -46,7 +46,7 @@ export function configureRoutes(store: EventStore): WebApiSetup {
         router.put(
             "/courses/:courseId/title",
             on(async req => {
-                const { courseId } = req.params
+                const courseId = req.params["courseId"] as string
                 const { newTitle } = req.body as { newTitle: string }
                 await handle(store, updateCourseTitle, {
                     type: "updateCourseTitle",
@@ -59,7 +59,7 @@ export function configureRoutes(store: EventStore): WebApiSetup {
         router.post(
             "/courses/:courseId/subscriptions",
             on(async req => {
-                const { courseId } = req.params
+                const courseId = req.params["courseId"] as string
                 const { studentId } = req.body as { studentId: string }
                 await handle(store, subscribeStudentToCourse, {
                     type: "subscribeStudentToCourse",
@@ -72,7 +72,8 @@ export function configureRoutes(store: EventStore): WebApiSetup {
         router.delete(
             "/courses/:courseId/subscriptions/:studentId",
             on(async req => {
-                const { courseId, studentId } = req.params
+                const courseId = req.params["courseId"] as string
+                const studentId = req.params["studentId"] as string
                 await handle(store, unsubscribeStudentFromCourse, {
                     type: "unsubscribeStudentFromCourse",
                     data: { courseId, studentId }

@@ -29,9 +29,10 @@ function configureTestApi(store: EventStore): WebApiSetup {
 
                 // Read events to check if item exists
                 const existing: DcbEvent[] = []
-                for await (const se of store.read(
-                    { isAll: false, items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }] } as never
-                )) {
+                for await (const se of store.read({
+                    isAll: false,
+                    items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }]
+                } as never)) {
                     existing.push(se.event)
                 }
 
@@ -49,9 +50,10 @@ function configureTestApi(store: EventStore): WebApiSetup {
             on(async req => {
                 const { id } = req.params
                 const events: DcbEvent[] = []
-                for await (const se of store.read(
-                    { isAll: false, items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }] } as never
-                )) {
+                for await (const se of store.read({
+                    isAll: false,
+                    items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }]
+                } as never)) {
                     events.push(se.event)
                 }
                 if (events.length === 0) {
@@ -112,10 +114,7 @@ describe("ApiSpecification", () => {
     it("asserts new events appended by request", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
             .when(agent => agent.post("/things").send({ id: "t1", name: "Thing One" }))
-            .then(
-                expectResponse(201),
-                new ItemCreatedEvent({ id: "t1", name: "Thing One" })
-            )
+            .then(expectResponse(201), new ItemCreatedEvent({ id: "t1", name: "Thing One" }))
     })
 
     it("seeded events affect decision outcome — duplicate rejected", async () => {
@@ -162,9 +161,7 @@ describe("ApiSpecification", () => {
             .then(expectResponse(422))
 
         // Second chain has a fresh store — t4 does not exist
-        await spec
-            .when(agent => agent.post("/things").send({ id: "t4", name: "Thing Four" }))
-            .then(expectResponse(201))
+        await spec.when(agent => agent.post("/things").send({ id: "t4", name: "Thing Four" })).then(expectResponse(201))
     })
 
     it("seeded events do not appear in newEvents assertions", async () => {

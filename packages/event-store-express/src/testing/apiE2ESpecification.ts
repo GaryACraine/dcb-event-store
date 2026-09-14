@@ -1,6 +1,5 @@
 import supertest from "supertest"
-import type { Response, Test } from "supertest"
-import type { Agent as TestAgent } from "supertest"
+import type { Response } from "supertest"
 import type { ErrorToProblemDetailsMapping } from "@dcb-es/event-store-web"
 import type { EventStore } from "@dcb-es/event-store"
 import { MemoryEventStore } from "@dcb-es/event-store"
