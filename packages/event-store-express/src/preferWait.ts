@@ -62,6 +62,10 @@ export function preferWait(options: PreferWaitOptions): (req: Request, res: Resp
         try {
             await options.waitFn(position, timeoutMs)
             res.setHeader("Preference-Applied", "wait")
+            // Clear If-None-Match after consuming it as a position cursor so that
+            // Express's conditional-GET freshness check does not produce a spurious
+            // 304 when the response ETag happens to equal the wait position.
+            delete req.headers["if-none-match"]
             next()
         } catch (err: unknown) {
             // Distinguish timeout from other errors

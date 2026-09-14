@@ -8,6 +8,7 @@ import {
     sseEventFeed,
     preferWait,
     withETag,
+    parsePageParams,
     type WebApiSetup,
     type WaitFunction
 } from "@dcb-es/event-store-express"
@@ -19,6 +20,7 @@ import {
     subscribeStudentToCourse,
     unsubscribeStudentFromCourse
 } from "./Deciders.js"
+import { PROJECTION_NAME } from "./PostgresCourseSubscriptionsProjection.js"
 import type { CourseDoc, StudentDoc } from "./PostgresCourseSubscriptionsProjection.js"
 
 export interface RouteDependencies {
@@ -29,6 +31,15 @@ export interface RouteDependencies {
 
 export function configureRoutes(deps: RouteDependencies): WebApiSetup {
     const { store, pool, waitFn } = deps
+
+    const getBookmarkPosition = async (): Promise<string> => {
+        const r = await pool.query<{ last_sequence_position: string }>(
+            "SELECT last_sequence_position FROM _handler_bookmarks WHERE handler_id = $1",
+            [PROJECTION_NAME]
+        )
+        return r.rows[0]?.last_sequence_position?.toString() ?? "0"
+    }
+
     return router => {
         // Apply preferWait middleware to all routes when waitFn is provided
         if (waitFn) {
@@ -40,8 +51,14 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             "/courses",
             on(async req => {
                 const { id, title, capacity } = req.body as { id: string; title: string; capacity: number }
-                await handle(store, registerCourse, { type: "registerCourse", data: { id, title, capacity } })
-                return Created({ createdId: id })
+                const position = await handle(store, registerCourse, {
+                    type: "registerCourse",
+                    data: { id, title, capacity }
+                })
+                return res => {
+                    withETag(position)(res)
+                    Created({ createdId: id })(res)
+                }
             })
         )
 
@@ -49,8 +66,11 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             "/students",
             on(async req => {
                 const { id, name } = req.body as { id: string; name: string }
-                await handle(store, registerStudent, { type: "registerStudent", data: { id, name } })
-                return Created({ createdId: id })
+                const position = await handle(store, registerStudent, { type: "registerStudent", data: { id, name } })
+                return res => {
+                    withETag(position)(res)
+                    Created({ createdId: id })(res)
+                }
             })
         )
 
@@ -59,11 +79,14 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const { newCapacity } = req.body as { newCapacity: number }
-                await handle(store, updateCourseCapacity, {
+                const position = await handle(store, updateCourseCapacity, {
                     type: "updateCourseCapacity",
                     data: { courseId, newCapacity }
                 })
-                return NoContent()
+                return res => {
+                    withETag(position)(res)
+                    NoContent()(res)
+                }
             })
         )
 
@@ -72,11 +95,14 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const { studentId } = req.body as { studentId: string }
-                await handle(store, subscribeStudentToCourse, {
+                const position = await handle(store, subscribeStudentToCourse, {
                     type: "subscribeStudentToCourse",
                     data: { courseId, studentId }
                 })
-                return Created({ url: `/courses/${courseId}/subscriptions/${studentId}` })
+                return res => {
+                    withETag(position)(res)
+                    Created({ url: `/courses/${courseId}/subscriptions/${studentId}` })(res)
+                }
             })
         )
 
@@ -85,26 +111,56 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const studentId = req.params["studentId"] as string
-                await handle(store, unsubscribeStudentFromCourse, {
+                const position = await handle(store, unsubscribeStudentFromCourse, {
                     type: "unsubscribeStudentFromCourse",
                     data: { courseId, studentId }
                 })
-                return NoContent()
+                return res => {
+                    withETag(position)(res)
+                    NoContent()(res)
+                }
             })
         )
 
         // Read routes
         router.get(
             "/courses",
-            on(async () => {
-                const result = await pool.query<{ data: CourseDoc; _id: string }>("SELECT _id, data FROM courses")
+            on(async req => {
+                const { limit } = parsePageParams(req)
+                const cursor = typeof req.query["cursor"] === "string" ? req.query["cursor"] : undefined
+
+                let result: { rows: { _id: string; data: CourseDoc }[] }
+                if (cursor) {
+                    result = await pool.query<{ _id: string; data: CourseDoc }>(
+                        "SELECT _id, data FROM courses WHERE _id > $1 ORDER BY _id LIMIT $2",
+                        [cursor, limit]
+                    )
+                } else {
+                    result = await pool.query<{ _id: string; data: CourseDoc }>(
+                        "SELECT _id, data FROM courses ORDER BY _id LIMIT $1",
+                        [limit]
+                    )
+                }
+
                 const courses = result.rows.map(row => ({
                     id: row.data.courseId,
                     title: row.data.title,
                     capacity: row.data.capacity,
                     subscribedStudents: row.data.subscribedStudents
                 }))
-                return OK({ body: courses })
+
+                const nextCursor = result.rows.length === limit ? result.rows[result.rows.length - 1]._id : undefined
+
+                const body: { data: typeof courses; cursor?: string } = {
+                    data: courses,
+                    ...(nextCursor && { cursor: nextCursor })
+                }
+
+                const bookmarkPosition = await getBookmarkPosition()
+                return res => {
+                    withETag(bookmarkPosition)(res)
+                    OK({ body })(res)
+                }
             })
         )
 
@@ -119,8 +175,9 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
                     return res => res.status(404).json({ status: 404, title: "Not Found", detail: "Course not found" })
                 }
                 const doc = result.rows[0].data
+                const bookmarkPosition = await getBookmarkPosition()
                 return res => {
-                    withETag(doc.courseId)(res)
+                    withETag(bookmarkPosition)(res)
                     OK({
                         body: {
                             id: doc.courseId,
@@ -144,8 +201,9 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
                     return res => res.status(404).json({ status: 404, title: "Not Found", detail: "Student not found" })
                 }
                 const doc = result.rows[0].data
+                const bookmarkPosition = await getBookmarkPosition()
                 return res => {
-                    withETag(doc.studentId)(res)
+                    withETag(bookmarkPosition)(res)
                     OK({
                         body: {
                             id: doc.studentId,

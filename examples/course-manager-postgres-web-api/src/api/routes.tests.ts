@@ -47,7 +47,7 @@ describe("POST /courses — register course", () => {
         await spec
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(
-                expectResponse(201, { body: { id: "c1" } }),
+                expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
                 new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
@@ -65,7 +65,7 @@ describe("POST /students — register student", () => {
         await spec
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(
-                expectResponse(201, { body: { id: "s1" } }),
+                expectResponse(201, { body: { id: "s1" }, headers: { etag: '"1"' } }),
                 new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             )
     })
@@ -83,7 +83,10 @@ describe("PUT /courses/:courseId/capacity — update capacity", () => {
         await spec
             .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 50 }))
-            .then(expectResponse(204), new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 }))
+            .then(
+                expectResponse(204, { headers: { etag: '"2"' } }),
+                new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 })
+            )
     })
 
     test("returns 404 when course does not exist", async () => {
@@ -98,7 +101,10 @@ describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
         await spec
             .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
-            .then(expectResponse(201), new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(
+                expectResponse(201, { headers: { etag: '"2"' } }),
+                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+            )
     })
 
     test("returns 422 when course is full", async () => {
@@ -126,7 +132,10 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
                 new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.delete("/courses/c1/subscriptions/s1"))
-            .then(expectResponse(204), new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(
+                expectResponse(204, { headers: { etag: '"3"' } }),
+                new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" })
+            )
     })
 })
 
@@ -239,6 +248,8 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
             capacity: 30,
             subscribedStudents: []
         })
+        // ETag reflects the projection's bookmark position, not the document ID
+        expect(getRes.headers["etag"]).toBe('"1"')
     })
 
     test("GET /courses/:courseId shows subscribed students after Prefer: wait", async () => {
@@ -263,6 +274,8 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
         expect(getRes.status).toBe(200)
         expect(getRes.body.subscribedStudents).toHaveLength(1)
         expect(getRes.body.subscribedStudents[0].studentId).toBe("s1")
+        // ETag reflects the projection's bookmark position, not the document ID
+        expect(getRes.headers["etag"]).toBe('"3"')
     })
 
     test("GET /students/:studentId returns student after Prefer: wait", async () => {
@@ -285,6 +298,8 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
             studentNumber: 1,
             subscribedCourses: []
         })
+        // ETag reflects the projection's bookmark position, not the document ID
+        expect(getRes.headers["etag"]).toBe('"1"')
     })
 
     test("GET /courses returns list of all courses", async () => {
@@ -304,8 +319,10 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
 
         const getRes = await agent.get("/courses")
         expect(getRes.status).toBe(200)
-        expect(Array.isArray(getRes.body)).toBe(true)
-        expect(getRes.body).toHaveLength(2)
+        expect(Array.isArray(getRes.body.data)).toBe(true)
+        expect(getRes.body.data).toHaveLength(2)
+        // ETag reflects the projection's bookmark position
+        expect(getRes.headers["etag"]).toBe('"2"')
     })
 
     test("GET /events streams events via SSE", async () => {
