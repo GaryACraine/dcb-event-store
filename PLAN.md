@@ -783,6 +783,23 @@ multi-tenancy, GraphQL, WebSockets (SSE covers the live-feed need).
 
 ---
 
+## 10b. Phase 10 — Sub-phase breakdown
+
+Phase 10 is split into sub-phases, each a separate branch and PR. Phases 8
+and 9 are deferred; work proceeds directly from Phase 7 to Phase 10.
+
+| Sub-phase | Branch | Deliverable | Depends on |
+|-----------|--------|-------------|------------|
+| 10.1 | `phase-10.1/web-api-scaffolding` | Package scaffolding (`event-store-web`, `event-store-express`) + RFC 9457 problem details mapping + `StaleETagError`/`MissingETagError` | — |
+| 10.4 | `phase-10.4/handler-model` | `on()` handler wrapper, response helpers (`OK`/`Created`/`NoContent`), `getApplication`, `startAPI` with graceful shutdown, health endpoints, trace-id middleware | 10.1 |
+| 10.3 | `phase-10.3/idempotent-commands` | `Idempotency-Key` header → `DcbEvent.id` mapping, UUID v5 derivation for multi-event commands | 10.4 |
+| 10.5 | `phase-10.5/api-specification` | Given/when/then API test harness with `MemoryEventStore`, `existingEvents()`, `expectNewEvents()`. Example package: `course-manager-web-api` | 10.4 |
+| 10.6 | `phase-10.6/read-side` | SSE event feed via `subscribe()`, query endpoint helpers, `Prefer: wait=<ms>` | 10.4 |
+| 10.7 | `phase-10.7/validation-openapi` | Zod request body validation, OpenAPI 3.1 generation, `GET /openapi.json` | 10.4 |
+| 10.2 | `phase-10.2/etag-semantics` | ETags with DCB semantics: `resourceVersion()`, `If-Match` as client-intent guard (412) vs append condition (409), concurrency modes | 10.4, 10.5 |
+
+---
+
 ## 11. Workflows — analysis, not a phase yet
 
 Emmett's `Workflow<Input, State, Output>` (`EMT: core/workflows/workflow.ts`,
@@ -819,6 +836,7 @@ pure and would be Easy.
 | 8 | | not started | |
 | 9 | | not started | |
 | 10 | | not started | |
+| 10.1 | `phase-10.1/web-api-scaffolding` | complete | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 
