@@ -32,3 +32,6 @@ export {
     type TestRequest,
     type ResponseAssert
 } from "./src/testing/index.js"
+export { sseEventFeed, type SseOptions } from "./src/sse.js"
+export { preferWait, type WaitFunction, type PreferWaitOptions } from "./src/preferWait.js"
+export { withETag, parsePageParams, type PaginatedResult } from "./src/query.js"
