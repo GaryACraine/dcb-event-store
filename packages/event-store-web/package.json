@@ -1,0 +1,56 @@
+{
+    "name": "@dcb-es/event-store-web",
+    "description": "Framework-agnostic HTTP utilities for @dcb-es/event-store — RFC 9457 problem details, typed errors, and response helpers",
+    "author": "Paul Grimshaw",
+    "license": "BSD-3-Clause",
+    "version": "0.1.0",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "build": "tsc -p tsconfig.build.json",
+        "watch": "tsc -w -p tsconfig.build.json",
+        "lint": "eslint \"**/*.ts\" .",
+        "lint-fix": "eslint \"**/*.ts\" . --fix",
+        "prepublishOnly": "test \"$CHANGESET_PUBLISH\" = '1' || (echo 'Use: pnpm run release (from repo root)' && exit 1)"
+    },
+    "keywords": [
+        "event-sourcing",
+        "event-store",
+        "dcb",
+        "dynamic-consistency-boundary",
+        "web",
+        "http",
+        "problem-details",
+        "rfc-9457",
+        "typescript"
+    ],
+    "homepage": "https://github.com/kraken-tech/dcb-event-store#readme",
+    "bugs": {
+        "url": "https://github.com/kraken-tech/dcb-event-store/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kraken-tech/dcb-event-store.git",
+        "directory": "packages/event-store-web"
+    },
+    "files": [
+        "dist"
+    ],
+    "dependencies": {
+        "@dcb-es/event-store": "workspace:*"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}
