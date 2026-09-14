@@ -655,3 +655,68 @@ await e2eSpec
 | E2E state | N/A | `existingRequests()` builds state via HTTP |
 | Postgres required | No | No |
 | Domain files | Same | Copied unchanged |
+
+---
+
+## `course-manager-postgres-web-api`
+
+**Package:** `@dcb-es/examples-course-manager-postgres-web-api`
+**Based on:** `course-manager-web-api`
+**Added in:** Phase 10.6
+
+### What it adds
+
+Extends the in-memory `course-manager-web-api` with a Postgres-backed read
+side, demonstrating the full read-your-writes pattern over HTTP:
+
+- **Pongo projections** — `PostgresCourseSubscriptionsProjection` (identical to
+  `course-manager-cli-with-pongo`) maintains `courses` and `students` JSONB
+  read models in Postgres.
+- **SSE event feed** — `GET /events` streams all events via
+  `sseEventFeed(store)`, supporting `Last-Event-ID` reconnection and `?types=`
+  / `?tags=` filters.
+- **Read endpoints** — `GET /courses`, `GET /courses/:courseId`, and
+  `GET /students/:studentId` query the Pongo collections directly and set
+  `ETag` headers via `withETag()`.
+- **`Prefer: wait` middleware** — `preferWait` is wired with `waitUntilProcessed`
+  from `event-store-postgres`. A client that receives a write response can
+  immediately issue a read with `Prefer: wait=5` and `If-None-Match: "<position>"`
+  to block until the projection has caught up, then receive a consistent response
+  with `Preference-Applied: wait`.
+
+### Route table
+
+| Method | Path | Handler |
+|--------|------|---------|
+| `POST` | `/courses` | `registerCourse` decider |
+| `POST` | `/students` | `registerStudent` decider |
+| `PUT` | `/courses/:courseId/capacity` | `updateCourseCapacity` decider |
+| `POST` | `/courses/:courseId/subscriptions` | `subscribeStudentToCourse` decider |
+| `DELETE` | `/courses/:courseId/subscriptions/:studentId` | `unsubscribeStudentFromCourse` decider |
+| `GET` | `/courses` | List all courses from Pongo |
+| `GET` | `/courses/:courseId` | Single course from Pongo |
+| `GET` | `/students/:studentId` | Single student from Pongo |
+| `GET` | `/events` | SSE event feed |
+
+### How it differs from `course-manager-web-api`
+
+| Aspect | Web API (in-memory) | Postgres Web API |
+|--------|---------------------|------------------|
+| Event store | `MemoryEventStore` | `PostgresEventStore` |
+| Read model | None | Pongo JSONB collections |
+| Read endpoints | None | `/courses`, `/courses/:id`, `/students/:id` |
+| Event stream | None | `GET /events` SSE feed |
+| Read-your-writes | N/A | `Prefer: wait` + `If-None-Match` |
+| Postgres required for tests | No | Yes (testcontainers via globalSetup) |
+| Domain files | — | Copied unchanged from base example |
+
+### Test structure
+
+The test file (`routes.tests.ts`) splits into two describe blocks:
+
+1. **Write-side tests** use `ApiSpecification` and `ApiE2ESpecification` with a
+   `MemoryEventStore` — identical coverage to the base example, no Postgres needed.
+2. **Read-side integration tests** use real Postgres via `getTestPgDatabasePool()`,
+   start a `createConsumer` with the Pongo projection, issue HTTP requests,
+   and use `Prefer: wait` to block until the projection is consistent before
+   asserting on read results.

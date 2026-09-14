@@ -158,6 +158,22 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   prior HTTP requests rather than event seeding. `.existingRequests(...requests)`
   runs setup requests before the `.when()` request. Response-only assertions (no
   event spy). Defined in `event-store-express`.
+- **SSE event feed** (`sseEventFeed`) — Express middleware that streams events
+  from `eventStore.subscribe()` as `text/event-stream`. Supports `Last-Event-ID`
+  reconnection, `?after=` cursor, `?types=` and `?tags=` filters, and periodic
+  heartbeat comments (`: heartbeat`). Uses `AbortController` tied to
+  `req.on('close')` so subscriptions are always cleaned up on client disconnect.
+  Defined in `event-store-express`.
+- **Query helpers** (`withETag`, `parsePageParams`) — `withETag(position)` sets
+  `ETag: "<position>"` on the response for cache-friendly reads.
+  `parsePageParams(req)` reads `?after=` and `?limit=` (default 50, max 200) for
+  cursor-based pagination. Both defined in `event-store-express`.
+- **`Prefer: wait` middleware** (`preferWait`) — reads `Prefer: wait=<seconds>`
+  and `If-None-Match: "<position>"` headers; calls an injected `waitFn` before
+  passing to the next handler; sets `Preference-Applied: wait` on success;
+  returns 504 problem details on timeout. Framework-agnostic: the example wires
+  `waitUntilProcessed` from `event-store-postgres` as the `waitFn`, achieving
+  read-your-writes semantics over HTTP without polling.
 
 ## Repo shape
 
