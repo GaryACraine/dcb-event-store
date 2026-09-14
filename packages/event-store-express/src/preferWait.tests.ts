@@ -54,10 +54,7 @@ describe("preferWait middleware", () => {
         const waitFn = vi.fn<WaitFunction>().mockResolvedValue(undefined)
         const app = createApp(waitFn)
 
-        const res = await request(app)
-            .get("/data")
-            .set("Prefer", "wait=2")
-            .set("If-None-Match", '"5"')
+        const res = await request(app).get("/data").set("Prefer", "wait=2").set("If-None-Match", '"5"')
 
         expect(res.status).toBe(200)
         expect(waitFn).toHaveBeenCalledOnce()
@@ -70,10 +67,7 @@ describe("preferWait middleware", () => {
         const waitFn = vi.fn<WaitFunction>().mockResolvedValue(undefined)
         const app = createApp(waitFn)
 
-        const res = await request(app)
-            .get("/data")
-            .set("Prefer", "wait=2")
-            .set("If-None-Match", '"5"')
+        const res = await request(app).get("/data").set("Prefer", "wait=2").set("If-None-Match", '"5"')
 
         expect(res.headers["preference-applied"]).toBe("wait")
     })
@@ -82,10 +76,7 @@ describe("preferWait middleware", () => {
         const waitFn = vi.fn<WaitFunction>().mockRejectedValue(new Error("wait timeout exceeded"))
         const app = createApp(waitFn)
 
-        const res = await request(app)
-            .get("/data")
-            .set("Prefer", "wait=1")
-            .set("If-None-Match", '"3"')
+        const res = await request(app).get("/data").set("Prefer", "wait=1").set("If-None-Match", '"3"')
 
         expect(res.status).toBe(504)
         expect(res.headers["content-type"]).toContain("application/problem+json")
@@ -98,10 +89,7 @@ describe("preferWait middleware", () => {
         const app = createApp(waitFn, { maxTimeoutMs: 3000 })
 
         // Client requests 60 seconds but maxTimeoutMs is 3000
-        const res = await request(app)
-            .get("/data")
-            .set("Prefer", "wait=60")
-            .set("If-None-Match", '"5"')
+        const res = await request(app).get("/data").set("Prefer", "wait=60").set("If-None-Match", '"5"')
 
         expect(res.status).toBe(200)
         const [, timeoutMs] = waitFn.mock.calls[0]
@@ -112,10 +100,7 @@ describe("preferWait middleware", () => {
         const waitFn = vi.fn<WaitFunction>().mockResolvedValue(undefined)
         const app = createApp(waitFn)
 
-        await request(app)
-            .get("/data")
-            .set("Prefer", "wait=10")
-            .set("If-None-Match", '"7"')
+        await request(app).get("/data").set("Prefer", "wait=10").set("If-None-Match", '"7"')
 
         const [, timeoutMs] = waitFn.mock.calls[0]
         expect(timeoutMs).toBe(10000)
@@ -125,10 +110,7 @@ describe("preferWait middleware", () => {
         const waitFn = vi.fn<WaitFunction>().mockRejectedValue(new Error("database error"))
         const app = createApp(waitFn)
 
-        const res = await request(app)
-            .get("/data")
-            .set("Prefer", "wait=2")
-            .set("If-None-Match", '"5"')
+        const res = await request(app).get("/data").set("Prefer", "wait=2").set("If-None-Match", '"5"')
 
         // Should be caught by generic error handler → 500
         expect(res.status).toBe(500)
@@ -137,15 +119,12 @@ describe("preferWait middleware", () => {
 
     it("parses If-None-Match position from quoted string", async () => {
         const capturedPosition: SequencePosition[] = []
-        const waitFn = vi.fn<WaitFunction>(async (pos) => {
+        const waitFn = vi.fn<WaitFunction>(async pos => {
             capturedPosition.push(pos)
         })
         const app = createApp(waitFn)
 
-        await request(app)
-            .get("/data")
-            .set("Prefer", "wait=1")
-            .set("If-None-Match", '"42"')
+        await request(app).get("/data").set("Prefer", "wait=1").set("If-None-Match", '"42"')
 
         expect(capturedPosition[0].toString()).toBe("42")
     })

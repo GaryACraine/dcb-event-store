@@ -207,9 +207,7 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
         await pool.query("ALTER SEQUENCE events_sequence_position_seq RESTART WITH 1")
         await pool.query("DELETE FROM courses")
         await pool.query("DELETE FROM students")
-        await pool.query(
-            "UPDATE _handler_bookmarks SET last_sequence_position = 0, version = 1, instance_id = NULL"
-        )
+        await pool.query("UPDATE _handler_bookmarks SET last_sequence_position = 0, version = 1, instance_id = NULL")
         eventStore = new PostgresEventStore({ pool })
         consumer = startConsumer(eventStore)
     })
@@ -232,10 +230,7 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
         expect(postRes.status).toBe(201)
 
         // GET with Prefer: wait + If-None-Match pointing to position 1
-        const getRes = await agent
-            .get("/courses/c1")
-            .set("Prefer", "wait=5")
-            .set("If-None-Match", '"1"')
+        const getRes = await agent.get("/courses/c1").set("Prefer", "wait=5").set("If-None-Match", '"1"')
 
         expect(getRes.status).toBe(200)
         expect(getRes.body).toMatchObject({
@@ -263,10 +258,7 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
         expect(subRes.status).toBe(201)
 
         // Wait for projection to catch up to position 3 before reading
-        const getRes = await agent
-            .get("/courses/c1")
-            .set("Prefer", "wait=5")
-            .set("If-None-Match", '"3"')
+        const getRes = await agent.get("/courses/c1").set("Prefer", "wait=5").set("If-None-Match", '"3"')
 
         expect(getRes.status).toBe(200)
         expect(getRes.body.subscribedStudents).toHaveLength(1)
@@ -284,10 +276,7 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
         // POST /students → position 1
         await agent.post("/students").send({ id: "s1", name: "Alice" })
 
-        const getRes = await agent
-            .get("/students/s1")
-            .set("Prefer", "wait=5")
-            .set("If-None-Match", '"1"')
+        const getRes = await agent.get("/students/s1").set("Prefer", "wait=5").set("If-None-Match", '"1"')
 
         expect(getRes.status).toBe(200)
         expect(getRes.body).toMatchObject({
@@ -334,41 +323,38 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
             // Collect one SSE message
             const messagePromise = new Promise<{ id: string; data: unknown }>((resolve, reject) => {
                 let buffer = ""
-                const req = http.get(
-                    { host: "127.0.0.1", port: addr.port, path: "/events" },
-                    res => {
-                        const timer = setTimeout(() => {
-                            req.destroy()
-                            reject(new Error("SSE timeout — no event received"))
-                        }, 8000)
+                const req = http.get({ host: "127.0.0.1", port: addr.port, path: "/events" }, res => {
+                    const timer = setTimeout(() => {
+                        req.destroy()
+                        reject(new Error("SSE timeout — no event received"))
+                    }, 8000)
 
-                        res.on("data", (chunk: Buffer) => {
-                            buffer += chunk.toString()
-                            const parts = buffer.split("\n\n")
-                            buffer = parts.pop() ?? ""
-                            for (const part of parts) {
-                                if (!part.trim() || part.startsWith(":")) continue
-                                const lines = part.split("\n")
-                                let id = ""
-                                let dataStr = ""
-                                for (const line of lines) {
-                                    if (line.startsWith("id: ")) id = line.slice(4)
-                                    else if (line.startsWith("data: ")) dataStr = line.slice(6)
-                                }
-                                if (dataStr) {
-                                    clearTimeout(timer)
-                                    req.destroy()
-                                    try {
-                                        resolve({ id, data: JSON.parse(dataStr) })
-                                    } catch {
-                                        resolve({ id, data: dataStr })
-                                    }
+                    res.on("data", (chunk: Buffer) => {
+                        buffer += chunk.toString()
+                        const parts = buffer.split("\n\n")
+                        buffer = parts.pop() ?? ""
+                        for (const part of parts) {
+                            if (!part.trim() || part.startsWith(":")) continue
+                            const lines = part.split("\n")
+                            let id = ""
+                            let dataStr = ""
+                            for (const line of lines) {
+                                if (line.startsWith("id: ")) id = line.slice(4)
+                                else if (line.startsWith("data: ")) dataStr = line.slice(6)
+                            }
+                            if (dataStr) {
+                                clearTimeout(timer)
+                                req.destroy()
+                                try {
+                                    resolve({ id, data: JSON.parse(dataStr) })
+                                } catch {
+                                    resolve({ id, data: dataStr })
                                 }
                             }
-                        })
-                        res.on("error", () => resolve({ id: "", data: null }))
-                    }
-                )
+                        }
+                    })
+                    res.on("error", () => resolve({ id: "", data: null }))
+                })
                 req.on("error", err => {
                     if ((err as NodeJS.ErrnoException).code !== "ECONNRESET") {
                         reject(err)

@@ -29,45 +29,42 @@ function collectSseMessages(
             resolve(messages)
         }
 
-        const req = http.get(
-            { host: "127.0.0.1", port: addr.port, path, headers: opts.headers ?? {} },
-            res => {
-                const timer = setTimeout(() => done(req), timeoutMs)
+        const req = http.get({ host: "127.0.0.1", port: addr.port, path, headers: opts.headers ?? {} }, res => {
+            const timer = setTimeout(() => done(req), timeoutMs)
 
-                res.on("data", (chunk: Buffer) => {
-                    buffer += chunk.toString()
-                    const parts = buffer.split("\n\n")
-                    buffer = parts.pop() ?? ""
-                    for (const part of parts) {
-                        if (!part.trim() || part.startsWith(":")) continue
-                        const lines = part.split("\n")
-                        let id = ""
-                        let dataStr = ""
-                        for (const line of lines) {
-                            if (line.startsWith("id: ")) id = line.slice(4)
-                            else if (line.startsWith("data: ")) dataStr = line.slice(6)
-                        }
-                        if (dataStr) {
-                            try {
-                                messages.push({ id, data: JSON.parse(dataStr) })
-                            } catch {
-                                messages.push({ id, data: dataStr })
-                            }
-                        }
-                        if (messages.length >= stopAfter) {
-                            clearTimeout(timer)
-                            done(req)
-                            return
+            res.on("data", (chunk: Buffer) => {
+                buffer += chunk.toString()
+                const parts = buffer.split("\n\n")
+                buffer = parts.pop() ?? ""
+                for (const part of parts) {
+                    if (!part.trim() || part.startsWith(":")) continue
+                    const lines = part.split("\n")
+                    let id = ""
+                    let dataStr = ""
+                    for (const line of lines) {
+                        if (line.startsWith("id: ")) id = line.slice(4)
+                        else if (line.startsWith("data: ")) dataStr = line.slice(6)
+                    }
+                    if (dataStr) {
+                        try {
+                            messages.push({ id, data: JSON.parse(dataStr) })
+                        } catch {
+                            messages.push({ id, data: dataStr })
                         }
                     }
-                })
+                    if (messages.length >= stopAfter) {
+                        clearTimeout(timer)
+                        done(req)
+                        return
+                    }
+                }
+            })
 
-                res.on("end", () => {
-                    clearTimeout(timer)
-                    done(req)
-                })
-            }
-        )
+            res.on("end", () => {
+                clearTimeout(timer)
+                done(req)
+            })
+        })
         req.on("error", err => {
             if ((err as NodeJS.ErrnoException).code === "ECONNRESET" || settled) {
                 resolve(messages)
@@ -78,11 +75,7 @@ function collectSseMessages(
     })
 }
 
-function collectHeartbeats(
-    server: http.Server,
-    path: string,
-    opts: { timeoutMs?: number } = {}
-): Promise<number> {
+function collectHeartbeats(server: http.Server, path: string, opts: { timeoutMs?: number } = {}): Promise<number> {
     const { timeoutMs = 500 } = opts
     return new Promise(resolve => {
         const addr = server.address() as { port: number }
