@@ -26,10 +26,7 @@ export function getApplication(options: ApplicationOptions): express.Express {
     return app
 }
 
-export function configureApplication(
-    app: express.Express,
-    options: ApplicationOptions
-): void {
+export function configureApplication(app: express.Express, options: ApplicationOptions): void {
     if (!options.enableDefaultExpressEtag) {
         app.set("etag", false)
     }
@@ -61,10 +58,7 @@ export function configureApplication(
     }
 }
 
-export function registerWebApi(
-    app: express.Express,
-    apis: WebApiSetup[]
-): void {
+export function registerWebApi(app: express.Express, apis: WebApiSetup[]): void {
     const router = express.Router()
     for (const setup of apis) {
         setup(router)
@@ -72,10 +66,7 @@ export function registerWebApi(
     app.use(router)
 }
 
-export function startAPI(
-    app: express.Express,
-    options?: StartApiOptions
-): http.Server {
+export function startAPI(app: express.Express, options?: StartApiOptions): http.Server {
     const port = options?.port ?? 0
     const server = http.createServer(app)
 

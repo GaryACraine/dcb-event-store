@@ -2,9 +2,7 @@ import type { NextFunction, Request, Response } from "express"
 
 export type HttpResponse = (response: Response) => void
 
-export type HttpHandler<Req extends Request = Request> = (
-    request: Req
-) => Promise<HttpResponse> | HttpResponse
+export type HttpHandler<Req extends Request = Request> = (request: Req) => Promise<HttpResponse> | HttpResponse
 
 export const on =
     <Req extends Request = Request>(handle: HttpHandler<Req>) =>

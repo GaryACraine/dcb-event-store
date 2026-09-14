@@ -8,7 +8,7 @@ describe("on() handler wrapper", () => {
         const app = express()
         app.get(
             "/test",
-            on(() => (res) => {
+            on(() => res => {
                 res.status(200).json({ ok: true })
             })
         )
@@ -25,7 +25,7 @@ describe("on() handler wrapper", () => {
             "/test",
             on(async () => {
                 await Promise.resolve()
-                return (res) => {
+                return res => {
                     res.status(200).json({ async: true })
                 }
             })
@@ -45,16 +45,10 @@ describe("on() handler wrapper", () => {
                 throw new Error("sync boom")
             })
         )
-        app.use(
-            (
-                err: Error,
-                _req: express.Request,
-                res: express.Response,
-                _next: express.NextFunction
-            ) => {
-                res.status(500).json({ error: err.message })
-            }
-        )
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+            res.status(500).json({ error: err.message })
+        })
 
         const res = await request(app).get("/test")
 
@@ -70,16 +64,10 @@ describe("on() handler wrapper", () => {
                 throw new Error("async boom")
             })
         )
-        app.use(
-            (
-                err: Error,
-                _req: express.Request,
-                res: express.Response,
-                _next: express.NextFunction
-            ) => {
-                res.status(500).json({ error: err.message })
-            }
-        )
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+            res.status(500).json({ error: err.message })
+        })
 
         const res = await request(app).get("/test")
 

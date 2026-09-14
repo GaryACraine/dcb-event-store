@@ -47,9 +47,7 @@ describe("response helpers", () => {
         })
 
         it("uses explicit location over createdId", async () => {
-            const app = createApp(() =>
-                Created({ createdId: "abc", location: "/custom/path" })
-            )
+            const app = createApp(() => Created({ createdId: "abc", location: "/custom/path" }))
             const res = await request(app).get("/test")
 
             expect(res.status).toBe(201)
@@ -58,9 +56,7 @@ describe("response helpers", () => {
         })
 
         it("uses explicit body over default", async () => {
-            const app = createApp(() =>
-                Created({ createdId: "abc", body: { custom: true } })
-            )
+            const app = createApp(() => Created({ createdId: "abc", body: { custom: true } }))
             const res = await request(app).get("/test")
 
             expect(res.status).toBe(201)
@@ -70,9 +66,7 @@ describe("response helpers", () => {
 
     describe("Accepted", () => {
         it("returns 202 with Location header", async () => {
-            const app = createApp(() =>
-                Accepted({ location: "/jobs/42/status" })
-            )
+            const app = createApp(() => Accepted({ location: "/jobs/42/status" }))
             const res = await request(app).get("/test")
 
             expect(res.status).toBe(202)
@@ -80,9 +74,7 @@ describe("response helpers", () => {
         })
 
         it("returns 202 with body", async () => {
-            const app = createApp(() =>
-                Accepted({ location: "/jobs/42/status", body: { jobId: "42" } })
-            )
+            const app = createApp(() => Accepted({ location: "/jobs/42/status", body: { jobId: "42" } }))
             const res = await request(app).get("/test")
 
             expect(res.status).toBe(202)

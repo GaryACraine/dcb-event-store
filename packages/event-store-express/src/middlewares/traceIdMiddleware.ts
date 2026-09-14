@@ -7,10 +7,7 @@ export const traceIdMiddleware =
     () =>
     (request: Request, response: Response, next: NextFunction): void => {
         const incoming = request.headers[HEADER]
-        const traceId =
-            typeof incoming === "string" && incoming.length > 0
-                ? incoming
-                : randomUUID()
+        const traceId = typeof incoming === "string" && incoming.length > 0 ? incoming : randomUUID()
         response.setHeader(HEADER, traceId)
         next()
     }

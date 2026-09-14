@@ -11,18 +11,16 @@ describe("getApplication", () => {
     it("parses JSON bodies by default", async () => {
         const app = getApplication({
             apis: [
-                (router) => {
+                router => {
                     router.post(
                         "/echo",
-                        on((req) => OK({ body: req.body }))
+                        on(req => OK({ body: req.body }))
                     )
                 }
             ]
         })
 
-        const res = await request(app)
-            .post("/echo")
-            .send({ hello: "world" })
+        const res = await request(app).post("/echo").send({ hello: "world" })
 
         expect(res.status).toBe(200)
         expect(res.body).toEqual({ hello: "world" })
@@ -32,18 +30,16 @@ describe("getApplication", () => {
         const app = getApplication({
             disableJsonMiddleware: true,
             apis: [
-                (router) => {
+                router => {
                     router.post(
                         "/echo",
-                        on((req) => OK({ body: req.body }))
+                        on(req => OK({ body: req.body }))
                     )
                 }
             ]
         })
 
-        const res = await request(app)
-            .post("/echo")
-            .send({ hello: "world" })
+        const res = await request(app).post("/echo").send({ hello: "world" })
 
         expect(res.status).toBe(200)
         expect(res.body).toEqual({})
@@ -52,7 +48,7 @@ describe("getApplication", () => {
     it("catches errors via problem details middleware", async () => {
         const app = getApplication({
             apis: [
-                (router) => {
+                router => {
                     router.get(
                         "/fail",
                         on(() => {
@@ -108,7 +104,7 @@ describe("getApplication", () => {
     it("disables Express ETags by default", async () => {
         const app = getApplication({
             apis: [
-                (router) => {
+                router => {
                     router.get(
                         "/data",
                         on(() => OK({ body: { value: 1 } }))
@@ -126,7 +122,7 @@ describe("getApplication", () => {
         const app = getApplication({
             enableDefaultExpressEtag: true,
             apis: [
-                (router) => {
+                router => {
                     router.get(
                         "/data",
                         on(() => OK({ body: { value: 1 } }))
@@ -149,7 +145,7 @@ describe("getApplication", () => {
                 detail: "I am a teapot"
             }),
             apis: [
-                (router) => {
+                router => {
                     router.get(
                         "/fail",
                         on(() => {
@@ -170,7 +166,7 @@ describe("getApplication", () => {
     it("works end-to-end with on() and response helpers", async () => {
         const app = getApplication({
             apis: [
-                (router) => {
+                router => {
                     router.get(
                         "/items",
                         on(() => OK({ body: [{ id: 1 }] }))

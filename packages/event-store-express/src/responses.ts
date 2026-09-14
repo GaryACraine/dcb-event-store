@@ -7,11 +7,7 @@ export interface HttpResponseOptions {
     location?: string
 }
 
-export type CreatedHttpResponseOptions = (
-    | { createdId: string }
-    | { url: string }
-) &
-    HttpResponseOptions
+export type CreatedHttpResponseOptions = ({ createdId: string } | { url: string }) & HttpResponseOptions
 
 export type AcceptedHttpResponseOptions = {
     location: string
@@ -30,40 +26,34 @@ export function send(response: Response, statusCode: number, options?: HttpRespo
     }
 }
 
-export function sendProblem(
-    response: Response,
-    statusCode: number,
-    problem: ProblemDetails
-): void {
+export function sendProblem(response: Response, statusCode: number, problem: ProblemDetails): void {
     response.setHeader("Content-Type", "application/problem+json")
     response.status(statusCode).json(problem)
 }
 
 export function OK(options?: HttpResponseOptions): HttpResponse {
-    return (response) => send(response, 200, options)
+    return response => send(response, 200, options)
 }
 
 export function Created(options: CreatedHttpResponseOptions): HttpResponse {
-    return (response) => {
+    return response => {
         const location =
             options.location ??
             ("createdId" in options ? `/api/${options.createdId}` : undefined) ??
             ("url" in options ? options.url : undefined)
 
-        const body =
-            options.body ??
-            ("createdId" in options ? { id: options.createdId } : undefined)
+        const body = options.body ?? ("createdId" in options ? { id: options.createdId } : undefined)
 
         send(response, 201, { body, location })
     }
 }
 
 export function Accepted(options: AcceptedHttpResponseOptions): HttpResponse {
-    return (response) => send(response, 202, options)
+    return response => send(response, 202, options)
 }
 
 export function NoContent(options?: NoContentHttpResponseOptions): HttpResponse {
-    return (response) => {
+    return response => {
         if (options?.location) {
             response.setHeader("Location", options.location)
         }
