@@ -22,3 +22,13 @@ export {
     type ApplicationOptions,
     type StartApiOptions
 } from "./src/application.js"
+export {
+    ApiSpecification,
+    ApiE2ESpecification,
+    expectResponse,
+    expectError,
+    type ApiSpecificationOptions,
+    type ApiE2ESpecificationOptions,
+    type TestRequest,
+    type ResponseAssert
+} from "./src/testing/index.js"

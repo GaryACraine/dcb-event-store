@@ -47,14 +47,14 @@
         "dist"
     ],
     "dependencies": {
-        "@dcb-es/event-store-web": "workspace:*"
+        "@dcb-es/event-store": "workspace:*",
+        "@dcb-es/event-store-web": "workspace:*",
+        "supertest": "^7.1.0"
     },
     "devDependencies": {
-        "@dcb-es/event-store": "workspace:*",
         "@types/express": "^5.0.0",
         "@types/supertest": "^6.0.2",
-        "express": "^5.1.0",
-        "supertest": "^7.1.0"
+        "express": "^5.1.0"
     },
     "peerDependencies": {
         "express": ">=4.18.0"

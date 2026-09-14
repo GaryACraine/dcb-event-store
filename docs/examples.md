@@ -12,8 +12,9 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-projections` | PostgreSQL read model | `Projection`, `rawSqlProjection`, `projectionToProcessor`, `ProjectionSpec` |
 | `course-manager-cli-with-pongo` | Pongo JSONB documents | `pongoProjection`, Pongo collections, JSONB document read models |
 | `course-manager-cli-with-inline-projection` | Pongo JSONB documents | `inlineProjections`, atomic read model updates, no consumer/waitUntilProcessed |
+| `course-manager-web-api` | In-memory (no Postgres) | `ApiSpecification`, `ApiE2ESpecification`, Express HTTP routes, `on()`, response helpers |
 
-Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` example is the exception -- it runs entirely in-memory using `MemoryEventStore` and needs no Docker or Postgres.
+Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` and `course-manager-web-api` examples are the exceptions -- they run entirely in-memory using `MemoryEventStore` and need no Docker or Postgres.
 
 ---
 
@@ -582,3 +583,75 @@ Pongo example with:
 |---|---|
 | `src/api/PostgresCourseSubscriptionsProjection.ts` | v1 + v2 projection definitions |
 | `src/api/Api.tests.ts` | Rebuild lifecycle test |
+
+---
+
+## course-manager-web-api
+
+**Location:** [`examples/course-manager-web-api/`](../examples/course-manager-web-api/)
+
+This example exposes the course-manager domain as an HTTP API and tests it with the `ApiSpecification` and `ApiE2ESpecification` harnesses from `@dcb-es/event-store-express`. It runs entirely in-memory; no PostgreSQL or Docker required.
+
+### What it adds
+
+- **HTTP routes** (`routes.ts`) — six Express endpoints using `on()` and the response helpers (`Created`, `NoContent`) from `@dcb-es/event-store-express`, wired to the same `Decider` objects from `course-manager-cli-with-decider-specs`
+- **`ApiSpecification` tests** — event-seeded given/when/then tests asserting HTTP response status, body, and newly appended events
+- **`ApiE2ESpecification` tests** — request-seeded flows that build state through prior HTTP requests and assert the subsequent response
+
+### Routes
+
+| Method | Path | Command | Response |
+|--------|------|---------|----------|
+| `POST` | `/courses` | `registerCourse` | 201 + `{ id }` |
+| `POST` | `/students` | `registerStudent` | 201 + `{ id }` |
+| `PUT` | `/courses/:courseId/capacity` | `updateCourseCapacity` | 204 |
+| `PUT` | `/courses/:courseId/title` | `updateCourseTitle` | 204 |
+| `POST` | `/courses/:courseId/subscriptions` | `subscribeStudentToCourse` | 201 |
+| `DELETE` | `/courses/:courseId/subscriptions/:studentId` | `unsubscribeStudentFromCourse` | 204 |
+
+### ApiSpecification tests
+
+```typescript
+const spec = ApiSpecification.for({ configureApi: configureRoutes })
+
+// Happy path — assert 201 + emitted event
+await spec
+    .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
+    .then(
+        expectResponse(201, { body: { id: "c1" } }),
+        new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+    )
+
+// Error path — seed existing event, assert 422 problem document
+await spec
+    .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+    .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
+    .then(expectError(422))
+```
+
+### ApiE2ESpecification tests
+
+```typescript
+const e2eSpec = ApiE2ESpecification.for({ configureApi: configureRoutes })
+
+// Build state through HTTP requests, then assert conflict
+await e2eSpec
+    .existingRequests(
+        agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }),
+        agent => agent.post("/students").send({ id: "s1", name: "Alice" })
+    )
+    .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
+    .then(expectResponse(201))
+```
+
+### How it differs from `course-manager-cli-with-decider-specs`
+
+| Aspect | Decider specs example | Web API example |
+|--------|----------------------|-----------------|
+| Interface | CLI prompts | HTTP API with JSON bodies |
+| Test harness | `DeciderSpecification` (command-level) | `ApiSpecification` / `ApiE2ESpecification` (HTTP-level) |
+| Test isolation | Fresh `MemoryEventStore` per spec chain | Fresh `MemoryEventStore` + Express app per spec chain |
+| Event spy | `then(events)` directly | Events read after seeded position post-request |
+| E2E state | N/A | `existingRequests()` builds state via HTTP |
+| Postgres required | No | No |
+| Domain files | Same | Copied unchanged |

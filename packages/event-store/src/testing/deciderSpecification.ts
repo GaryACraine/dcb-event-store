@@ -1,50 +1,13 @@
 import { DcbEvent, AppendCondition } from "../eventStore/EventStore.js"
 import { DcbCommand } from "../eventStore/DcbCommand.js"
-import { Tags } from "../eventStore/Tags.js"
 import { MemoryEventStore } from "../eventStore/memoryEventStore/MemoryEventStore.js"
 import { EventHandlers, EventHandlerStates, buildDecisionModel } from "../eventHandling/buildDecisionModel.js"
 import { Decider } from "../eventHandling/Decider.js"
 import { ensureIsArray } from "../ensureIsArray.js"
+import { normalizeForComparison, deepEqual } from "./assertions.js"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ErrorConstructor = new (...args: any[]) => Error
-
-function normalizeForComparison(event: DcbEvent): { type: string; tags: string[]; data: unknown; metadata: unknown } {
-    return {
-        type: event.type,
-        tags: event.tags instanceof Tags ? event.tags.values : [],
-        data: event.data,
-        metadata: event.metadata
-    }
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-    if (a === b) return true
-    if (a === null || b === null) return false
-    if (typeof a !== typeof b) return false
-    if (typeof a === "function") return true
-    if (typeof a !== "object") return false
-
-    if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return false
-        return a.every((val, idx) => deepEqual(val, b[idx]))
-    }
-
-    const aObj = a as Record<string, unknown>
-    const bObj = b as Record<string, unknown>
-
-    const aKeys = Object.keys(aObj)
-    const bKeys = Object.keys(bObj)
-
-    if (aKeys.length !== bKeys.length) return false
-
-    for (const key of aKeys) {
-        if (!Object.prototype.hasOwnProperty.call(bObj, key)) return false
-        if (!deepEqual(aObj[key], bObj[key])) return false
-    }
-
-    return true
-}
 
 export class DeciderSpecification<TCommand extends DcbCommand, THandlers extends EventHandlers> {
     private constructor(private readonly d: Decider<TCommand, THandlers>) {}
