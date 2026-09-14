@@ -1,7 +1,12 @@
 import type { DcbEvent, SequencedEvent } from "../eventStore/EventStore.js"
 import { Tags } from "../eventStore/Tags.js"
 
-export function normalizeForComparison(event: DcbEvent): { type: string; tags: string[]; data: unknown; metadata: unknown } {
+export function normalizeForComparison(event: DcbEvent): {
+    type: string
+    tags: string[]
+    data: unknown
+    metadata: unknown
+} {
     return {
         type: event.type,
         tags: event.tags instanceof Tags ? event.tags.values : [],
@@ -45,9 +50,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 export function assertMatches(actual: unknown, expected: unknown): void {
     if (expected === null || typeof expected !== "object") {
         if (!deepEqual(actual, expected)) {
-            throw new Error(
-                `Expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`
-            )
+            throw new Error(`Expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`)
         }
         return
     }
@@ -61,9 +64,7 @@ export function assertMatches(actual: unknown, expected: unknown): void {
 
     for (const key of Object.keys(expectedObj)) {
         if (!Object.prototype.hasOwnProperty.call(actualObj, key)) {
-            throw new Error(
-                `Expected key "${key}" to be present in ${JSON.stringify(actualObj)}`
-            )
+            throw new Error(`Expected key "${key}" to be present in ${JSON.stringify(actualObj)}`)
         }
         assertMatches(actualObj[key], expectedObj[key])
     }

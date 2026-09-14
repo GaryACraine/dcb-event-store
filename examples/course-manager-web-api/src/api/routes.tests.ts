@@ -53,10 +53,7 @@ describe("PUT /courses/:courseId/capacity — update capacity", () => {
         await spec
             .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 50 }))
-            .then(
-                expectResponse(204),
-                new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 })
-            )
+            .then(expectResponse(204), new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 }))
     })
 
     test("returns 404 when course does not exist", async () => {
@@ -71,10 +68,7 @@ describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
         await spec
             .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
-            .then(
-                expectResponse(201),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
-            )
+            .then(expectResponse(201), new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }))
     })
 
     test("returns 422 when course is full", async () => {
@@ -102,10 +96,7 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
                 new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.delete("/courses/c1/subscriptions/s1"))
-            .then(
-                expectResponse(204),
-                new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" })
-            )
+            .then(expectResponse(204), new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }))
     })
 })
 

@@ -369,6 +369,15 @@ importers:
         specifier: ^10.9.0
         version: 10.28.0
 
+  examples/course-manager-web-api:
+    dependencies:
+      '@dcb-es/event-store':
+        specifier: workspace:*
+        version: link:../../packages/event-store
+      '@dcb-es/event-store-express':
+        specifier: workspace:*
+        version: link:../../packages/event-store-express
+
   packages/event-store:
     dependencies:
       uuid:
@@ -405,13 +414,16 @@ importers:
 
   packages/event-store-express:
     dependencies:
-      '@dcb-es/event-store-web':
-        specifier: workspace:*
-        version: link:../event-store-web
-    devDependencies:
       '@dcb-es/event-store':
         specifier: workspace:*
         version: link:../event-store
+      '@dcb-es/event-store-web':
+        specifier: workspace:*
+        version: link:../event-store-web
+      supertest:
+        specifier: ^7.1.0
+        version: 7.2.2
+    devDependencies:
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6
@@ -421,9 +433,6 @@ importers:
       express:
         specifier: ^5.1.0
         version: 5.2.1
-      supertest:
-        specifier: ^7.1.0
-        version: 7.2.2
 
   packages/event-store-postgres:
     dependencies:

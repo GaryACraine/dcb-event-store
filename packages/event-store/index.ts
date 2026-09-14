@@ -25,4 +25,10 @@ export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState
 export { buildDecisionModel, EventHandlers, EventHandlerStates } from "./src/eventHandling/buildDecisionModel.js"
 export { Decider, decider, handle } from "./src/eventHandling/Decider.js"
 
-export { DeciderSpecification, normalizeForComparison, deepEqual, assertMatches, assertNewEvents } from "./src/testing/index.js"
+export {
+    DeciderSpecification,
+    normalizeForComparison,
+    deepEqual,
+    assertMatches,
+    assertNewEvents
+} from "./src/testing/index.js"
