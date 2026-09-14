@@ -1,0 +1,70 @@
+{
+    "name": "@dcb-es/event-store-express",
+    "description": "Express adapter for @dcb-es/event-store — problem details middleware, handler wrappers, and application lifecycle",
+    "author": "Paul Grimshaw",
+    "license": "BSD-3-Clause",
+    "version": "0.1.0",
+    "type": "module",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "build": "tsc -p tsconfig.build.json",
+        "watch": "tsc -w -p tsconfig.build.json",
+        "lint": "eslint \"**/*.ts\" .",
+        "lint-fix": "eslint \"**/*.ts\" . --fix",
+        "prepublishOnly": "test \"$CHANGESET_PUBLISH\" = '1' || (echo 'Use: pnpm run release (from repo root)' && exit 1)"
+    },
+    "keywords": [
+        "event-sourcing",
+        "event-store",
+        "dcb",
+        "dynamic-consistency-boundary",
+        "express",
+        "http",
+        "problem-details",
+        "typescript"
+    ],
+    "homepage": "https://github.com/kraken-tech/dcb-event-store#readme",
+    "bugs": {
+        "url": "https://github.com/kraken-tech/dcb-event-store/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kraken-tech/dcb-event-store.git",
+        "directory": "packages/event-store-express"
+    },
+    "files": [
+        "dist"
+    ],
+    "dependencies": {
+        "@dcb-es/event-store-web": "workspace:*"
+    },
+    "devDependencies": {
+        "@dcb-es/event-store": "workspace:*",
+        "@types/express": "^5.0.0",
+        "@types/supertest": "^6.0.2",
+        "express": "^5.1.0",
+        "supertest": "^7.1.0"
+    },
+    "peerDependencies": {
+        "express": ">=4.18.0"
+    },
+    "peerDependenciesMeta": {
+        "express": {
+            "optional": false
+        }
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

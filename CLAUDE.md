@@ -120,6 +120,14 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   truncate + bookmark reset), replays all events with a `stopWhenCaughtUp`
   consumer, then reactivates (exclusive lock + status `'active'`). Both
   inline and async handlers skip the projection while it is inactive.
+- **ProblemDetails** — RFC 9457 `application/problem+json` response format.
+  `toProblemDetails()` maps any error (DcbError subclasses, plain Errors,
+  non-Error values) to a typed `ProblemDetails` object with `status`, `title`,
+  `detail`, `type`, and `instance`. User code can supply a custom
+  `ErrorToProblemDetailsMapping` that takes precedence over the default.
+- **Web-specific errors** — `StaleETagError` (412, `STALE_ETAG`) and
+  `MissingETagError` (428, `MISSING_ETAG`) extend `DcbError`. Defined in
+  `event-store-web`; the ETag middleware that throws them ships in Phase 10.2.
 
 ## Repo shape
 
@@ -128,9 +136,11 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 - `packages/event-store-postgres` — `@dcb-es/event-store-postgres`: the store,
   lock strategy, COPY writer, handler runner.
 - `packages/event-store-bench` — benchmark harness and scenarios.
-- `packages/event-store-web`, `packages/event-store-express` (Phase 10) —
-  framework-agnostic HTTP kit and the Express adapter. These never import
-  store internals; they depend on the public `EventStore` interface only.
+- `packages/event-store-web` — `@dcb-es/event-store-web`: framework-agnostic
+  HTTP utilities. RFC 9457 problem details mapping, web-specific error classes.
+  Depends only on `@dcb-es/event-store` for error classes.
+- `packages/event-store-express` — `@dcb-es/event-store-express`: Express
+  adapter. Problem details error middleware. Express is a peer dependency.
 - `examples/*` — workspace packages; each is a variant of the previous one
   (see `PLAN.md` §0.6).
 - pnpm workspaces (not Lerna/Yarn — older docs are wrong), vitest, ESLint +
