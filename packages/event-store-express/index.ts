@@ -32,3 +32,4 @@ export {
     type TestRequest,
     type ResponseAssert
 } from "./src/testing/index.js"
+export { sseEventFeed, type SseOptions } from "./src/sse.js"
