@@ -837,6 +837,7 @@ pure and would be Easy.
 | 9 | | not started | |
 | 10 | | not started | |
 | 10.1 | `phase-10.1/web-api-scaffolding` | complete | N/A (no append/read/lock changes) |
+| 10.4 | `phase-10.4/handler-model` | complete | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 

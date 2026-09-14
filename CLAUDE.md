@@ -128,6 +128,23 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 - **Web-specific errors** — `StaleETagError` (412, `STALE_ETAG`) and
   `MissingETagError` (428, `MISSING_ETAG`) extend `DcbError`. Defined in
   `event-store-web`; the ETag middleware that throws them ships in Phase 10.2.
+- **`on()` handler wrapper** — wraps an `HttpHandler` (sync or async function
+  returning an `HttpResponse` callback) into Express middleware with
+  try/catch → `next(error)` for Express 4 compatibility. Defined in
+  `event-store-express`.
+- **Response helpers** — `OK()`, `Created()`, `Accepted()`, `NoContent()`
+  return `HttpResponse` callbacks that set status, Location header, and JSON
+  body. `send()` and `sendProblem()` are lower-level utilities. Defined in
+  `event-store-express`.
+- **Application factory** — `getApplication(options)` creates an Express app
+  with JSON parsing, URL encoding, trace-ID middleware, health endpoints
+  (`/health/live`, `/health/ready`), user API routes, and problem details
+  error handling. `startAPI(app)` creates an HTTP server with SIGTERM/SIGINT
+  graceful shutdown. Defined in `event-store-express`.
+- **Trace-ID middleware** — reads `x-request-id` from the incoming request;
+  if present, echoes it on the response; if absent, generates a UUID v4
+  via `crypto.randomUUID()`. Always on by default, opt-out via
+  `disableTraceIdMiddleware`. Defined in `event-store-express`.
 
 ## Repo shape
 
@@ -140,7 +157,8 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   HTTP utilities. RFC 9457 problem details mapping, web-specific error classes.
   Depends only on `@dcb-es/event-store` for error classes.
 - `packages/event-store-express` — `@dcb-es/event-store-express`: Express
-  adapter. Problem details error middleware. Express is a peer dependency.
+  adapter. `on()` handler wrapper, response helpers, application factory with
+  lifecycle, trace-ID and problem details middleware. Express is a peer dependency.
 - `examples/*` — workspace packages; each is a variant of the previous one
   (see `PLAN.md` §0.6).
 - pnpm workspaces (not Lerna/Yarn — older docs are wrong), vitest, ESLint +
