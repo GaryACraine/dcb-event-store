@@ -29,6 +29,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.0
         version: 9.39.4
+      '@types/pg':
+        specifier: 8.20.0
+        version: 8.20.0
       '@types/uuid':
         specifier: ^9.0.8
         version: 9.0.8
@@ -396,6 +399,12 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
+      supertest:
+        specifier: ^7.1.0
+        version: 7.2.2
       testcontainers:
         specifier: ^10.9.0
         version: 10.28.0
