@@ -2,6 +2,7 @@
     "extends": "../../tsconfig.json",
     "compilerOptions": {
         "outDir": "./dist",
+        "rootDir": "../..",
         "paths": {
             "@test/*": ["../../test/*", "../../test/*.ts"]
         }
