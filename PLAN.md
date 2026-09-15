@@ -835,25 +835,35 @@ pure and would be Easy.
 | 7 | `phase-7/projection-registry` | complete | N/A (no append/read hot-path changes; shared lock in projection handlers is xact-scoped, not in write path) |
 | 8 | | not started | |
 | 9 | | not started | |
-| 10 | | not started | |
 | 10.1 | `phase-10.1/web-api-scaffolding` | complete | N/A (no append/read/lock changes) |
 | 10.4 | `phase-10.4/handler-model` | complete | N/A (no append/read/lock changes) |
 | 10.5 | `phase-10.5/api-specification` | complete | N/A (no append/read/lock changes) |
 | 10.6 | `phase-10.6/read-side` | complete | N/A (no append/read/lock changes) |
+| 10.3 | `phase-10.3/idempotent-commands` | not started | |
+| 10.7 | `phase-10.7/validation-openapi` | not started | |
+| 10.2 | `phase-10.2/etag-semantics` | not started | |
 
 ## 13. Known issues
 
 ### 13.1 IDE `@test` path alias not resolved in VS Code
 
-**Status:** open (post `chore/tsconfig-ide-fix` merge)
+**Status:** resolved (merged to main via `chore/fix-test-rootdir`)
 
-Despite the `chore/tsconfig-ide-fix` PR (split `tsconfig.json` / `tsconfig.build.json`,
-added `paths` with `@test/*` mapping to `../../test/*`), VS Code still reports
-`Cannot find module '@test/testPgDbPool' or its corresponding type declarations (ts2307)`
-in example packages (e.g.
-`examples/course-manager-cli-with-readmodel/src/…/PostgresCourseSubscriptionRepository.tests.ts:7`).
-Restarting VS Code, reloading the developer window, and restarting the TS server
-have all been tried without effect.
+Two root causes were found and fixed:
 
-Build and tests pass — this is purely an IDE diagnostic issue. Investigate further
-when time allows; does not block feature work.
+1. **TS6059 `rootDir` violation** — TypeScript inferred `rootDir` from each
+   package's `include` patterns (e.g. `./src/**/*`), scoping it to the package
+   directory. The `@test/*` alias resolves to `../../test/`, outside that root,
+   so the language server raised TS6059. Fix: add `"rootDir": "../.."` to each
+   affected `tsconfig.json` (`noEmit: true`, IDE/test config) and override with
+   `"rootDir": "."` in each `tsconfig.build.json` so build output paths are
+   unchanged. Applied across 8 examples + `event-store-postgres` +
+   `event-store-bench`.
+
+2. **Phantom `@types/pg` from a parent-directory project** — a separate project
+   at `/Users/.../Projects/` has its own `node_modules/@types/pg@8.23.1`.
+   TypeScript walks up the directory tree and picks it up, conflicting with the
+   project's `@types/pg@8.20.0` (in the pnpm store), producing TS2322. Fix:
+   hoist `@types/pg@8.20.0` to the workspace root `devDependencies` so
+   TypeScript finds the correct version at `node_modules/@types/pg` before
+   walking up.
