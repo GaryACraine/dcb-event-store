@@ -320,7 +320,65 @@ docker stop dcb-pg
 | GET    | /courses/:courseId                          | —               | 200 doc + `ETag: "<pos>"`         |
 | GET    | /students/:studentId                        | —               | 200 doc + `ETag: "<pos>"`         |
 | GET    | /events                                     | —               | text/event-stream                 |
+| GET    | /openapi.json                               | —               | 200 OpenAPI 3.1.0 document        |
 | GET    | /health/live                                | —               | 200 `{"status":"ok"}`             |
+
+## Validation errors
+
+All write endpoints validate their request bodies. Invalid requests receive a `400 Bad Request`
+with an `application/problem+json` body listing every validation issue.
+
+```bash
+# Missing required field
+curl -s -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -d '{"id":"c1","title":"Math"}'
+# HTTP/1.1 400 Bad Request
+# Content-Type: application/problem+json
+# {"status":400,"title":"Bad Request","detail":"Validation failed: capacity: Required"}
+
+# Capacity out of range
+curl -s -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -d '{"id":"c1","title":"Math","capacity":0}'
+# {"status":400,"title":"Bad Request","detail":"Validation failed: capacity: Number must be greater than 0"}
+
+# Wrong type
+curl -s -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -d '{"id":"c1","title":"Math","capacity":"thirty"}'
+# {"status":400,"title":"Bad Request","detail":"Validation failed: capacity: Expected number, received string"}
+```
+
+## OpenAPI document
+
+A machine-readable OpenAPI 3.1.0 document describing all routes — including `ETag`,
+`If-Match`, `If-None-Match`, `Prefer: wait`, and `Idempotency-Key` headers — is served
+at `GET /openapi.json`.
+
+```bash
+curl http://localhost:3000/openapi.json | jq .
+# {
+#   "openapi": "3.1.0",
+#   "info": { "title": "Course Manager API", "version": "1.0.0", ... },
+#   "paths": { "/courses": { ... }, "/students": { ... }, ... }
+# }
+
+# Pretty-print just the path names
+curl -s http://localhost:3000/openapi.json | jq '[.paths | keys[]]'
+# ["/courses", "/courses/{courseId}", "/courses/{courseId}/capacity",
+#  "/courses/{courseId}/subscriptions", "/courses/{courseId}/subscriptions/{studentId}",
+#  "/events", "/students/{studentId}"]
+```
+
+## Extension points (out of scope)
+
+- **Authentication/authorization** — add standard Express middleware before the router.
+- **Rate limiting** — drop in `express-rate-limit` or similar before the router.
+- **Multi-tenancy** — extend `RouteDependencies` with a tenant resolver.
+- **GraphQL** — wire a GraphQL server alongside the REST routes.
+- **WebSockets** — SSE (`GET /events`) covers live-feed needs; upgrade if you require
+  bidirectional messaging.
 
 ## How it differs from course-manager-web-api
 

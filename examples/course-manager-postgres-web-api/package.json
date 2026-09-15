@@ -16,12 +16,14 @@
         "lint-fix": "eslint \"**/*.ts\" . --fix"
     },
     "dependencies": {
+        "@asteasolutions/zod-to-openapi": "^7.0.0",
         "@dcb-es/event-store": "workspace:*",
         "@dcb-es/event-store-express": "workspace:*",
         "@dcb-es/event-store-postgres": "workspace:*",
         "@event-driven-io/dumbo": ">=0.13.0-beta.52",
         "@event-driven-io/pongo": ">=0.17.0-beta.52",
-        "pg": "^8.20.0"
+        "pg": "^8.20.0",
+        "zod": "^3.0.0"
     },
     "devDependencies": {
         "@testcontainers/postgresql": "^10.9.0",
