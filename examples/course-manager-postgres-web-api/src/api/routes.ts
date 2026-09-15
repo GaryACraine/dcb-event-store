@@ -1,5 +1,6 @@
 import { handle } from "@dcb-es/event-store"
 import type { EventStore } from "@dcb-es/event-store"
+import { SequencePosition } from "@dcb-es/event-store"
 import {
     on,
     Created,
@@ -9,6 +10,7 @@ import {
     preferWait,
     withETag,
     parsePageParams,
+    getIdempotencyKey,
     type WebApiSetup,
     type WaitFunction
 } from "@dcb-es/event-store-express"
@@ -40,6 +42,22 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
         return r.rows[0]?.last_sequence_position?.toString() ?? "0"
     }
 
+    const findExistingPosition = async (idempotencyKey: string | undefined): Promise<SequencePosition | undefined> => {
+        if (!idempotencyKey) return undefined
+        try {
+            const r = await pool.query<{ sequence_position: string }>(
+                "SELECT sequence_position FROM events WHERE message_id = $1::uuid",
+                [idempotencyKey]
+            )
+            if (r.rows.length > 0) {
+                return SequencePosition.fromString(r.rows[0].sequence_position.toString())
+            }
+        } catch {
+            // Gracefully handle mock pool in unit tests
+        }
+        return undefined
+    }
+
     return router => {
         // Apply preferWait middleware to all routes when waitFn is provided
         if (waitFn) {
@@ -51,10 +69,16 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             "/courses",
             on(async req => {
                 const { id, title, capacity } = req.body as { id: string; title: string; capacity: number }
-                const position = await handle(store, registerCourse, {
-                    type: "registerCourse",
-                    data: { id, title, capacity }
-                })
+                const idempotencyKey = getIdempotencyKey(req)
+                const existingPosition = await findExistingPosition(idempotencyKey)
+                const position =
+                    existingPosition ??
+                    (await handle(
+                        store,
+                        registerCourse,
+                        { type: "registerCourse", data: { id, title, capacity } },
+                        { idempotencyKey }
+                    ))
                 return res => {
                     withETag(position)(res)
                     Created({ createdId: id })(res)
@@ -66,7 +90,16 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             "/students",
             on(async req => {
                 const { id, name } = req.body as { id: string; name: string }
-                const position = await handle(store, registerStudent, { type: "registerStudent", data: { id, name } })
+                const idempotencyKey = getIdempotencyKey(req)
+                const existingPosition = await findExistingPosition(idempotencyKey)
+                const position =
+                    existingPosition ??
+                    (await handle(
+                        store,
+                        registerStudent,
+                        { type: "registerStudent", data: { id, name } },
+                        { idempotencyKey }
+                    ))
                 return res => {
                     withETag(position)(res)
                     Created({ createdId: id })(res)
@@ -79,10 +112,16 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const { newCapacity } = req.body as { newCapacity: number }
-                const position = await handle(store, updateCourseCapacity, {
-                    type: "updateCourseCapacity",
-                    data: { courseId, newCapacity }
-                })
+                const idempotencyKey = getIdempotencyKey(req)
+                const existingPosition = await findExistingPosition(idempotencyKey)
+                const position =
+                    existingPosition ??
+                    (await handle(
+                        store,
+                        updateCourseCapacity,
+                        { type: "updateCourseCapacity", data: { courseId, newCapacity } },
+                        { idempotencyKey }
+                    ))
                 return res => {
                     withETag(position)(res)
                     NoContent()(res)
@@ -95,10 +134,16 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const { studentId } = req.body as { studentId: string }
-                const position = await handle(store, subscribeStudentToCourse, {
-                    type: "subscribeStudentToCourse",
-                    data: { courseId, studentId }
-                })
+                const idempotencyKey = getIdempotencyKey(req)
+                const existingPosition = await findExistingPosition(idempotencyKey)
+                const position =
+                    existingPosition ??
+                    (await handle(
+                        store,
+                        subscribeStudentToCourse,
+                        { type: "subscribeStudentToCourse", data: { courseId, studentId } },
+                        { idempotencyKey }
+                    ))
                 return res => {
                     withETag(position)(res)
                     Created({ url: `/courses/${courseId}/subscriptions/${studentId}` })(res)
@@ -111,10 +156,16 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
             on(async req => {
                 const courseId = req.params["courseId"] as string
                 const studentId = req.params["studentId"] as string
-                const position = await handle(store, unsubscribeStudentFromCourse, {
-                    type: "unsubscribeStudentFromCourse",
-                    data: { courseId, studentId }
-                })
+                const idempotencyKey = getIdempotencyKey(req)
+                const existingPosition = await findExistingPosition(idempotencyKey)
+                const position =
+                    existingPosition ??
+                    (await handle(
+                        store,
+                        unsubscribeStudentFromCourse,
+                        { type: "unsubscribeStudentFromCourse", data: { courseId, studentId } },
+                        { idempotencyKey }
+                    ))
                 return res => {
                     withETag(position)(res)
                     NoContent()(res)

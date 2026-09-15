@@ -287,5 +287,32 @@ describe("Scenario: course enrollment lifecycle", () => {
         expect(step16.body.cursor).toBeUndefined()
         console.log(`  → last page items: ${step16.body.data.map((c: { id: string }) => c.id).join(", ")}`)
         console.log("  → no cursor — last page confirmed")
+
+        // ── Step 17: POST /courses with Idempotency-Key ───────────────────────
+        // Client generates a UUID and attaches it as Idempotency-Key. The server
+        // stores it as the event's message_id, enabling safe retries.
+        const idempotencyKey = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        console.log(`\n[Step 17] POST /courses with Idempotency-Key: ${idempotencyKey}`)
+        const step17 = await agent
+            .post("/courses")
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ id: "idempotent101", title: "Idempotent Course", capacity: 10 })
+        console.log(`  → ${step17.status}  ETag: ${step17.headers["etag"]}`)
+        expect(step17.status).toBe(201)
+        const idempotentETag = step17.headers["etag"] as string
+
+        // ── Step 18: Retry with same Idempotency-Key ──────────────────────────
+        // The server finds the existing event by message_id (the pre-check),
+        // short-circuits before the decision model, and returns the same ETag.
+        // No duplicate event is appended.
+        console.log(`\n[Step 18] POST /courses retry with same Idempotency-Key (expect same ETag: ${idempotentETag})`)
+        const step18 = await agent
+            .post("/courses")
+            .set("Idempotency-Key", idempotencyKey)
+            .send({ id: "idempotent101", title: "Idempotent Course", capacity: 10 })
+        console.log(`  → ${step18.status}  ETag: ${step18.headers["etag"]}`)
+        expect(step18.status).toBe(201)
+        expect(step18.headers["etag"]).toBe(idempotentETag)
+        console.log("  → retry returned same ETag — idempotent")
     })
 })

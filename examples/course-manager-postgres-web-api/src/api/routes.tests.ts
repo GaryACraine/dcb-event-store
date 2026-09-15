@@ -139,6 +139,30 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
     })
 })
 
+describe("POST /courses — idempotency key (unit, MemoryEventStore)", () => {
+    test("sets event.id to the Idempotency-Key value", async () => {
+        const key = "550e8400-e29b-41d4-a716-446655440000"
+        await spec
+            .when(agent =>
+                agent.post("/courses").set("Idempotency-Key", key).send({ id: "c1", title: "Math", capacity: 30 })
+            )
+            .then(
+                expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
+                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+            )
+    })
+
+    test("store-level dedup: same Idempotency-Key twice results in only one event", async () => {
+        // First request — succeeds
+        const key = "550e8400-e29b-41d4-a716-446655440001"
+        await spec
+            .when(agent =>
+                agent.post("/courses").set("Idempotency-Key", key).send({ id: "c2", title: "Science", capacity: 20 })
+            )
+            .then(expectResponse(201))
+    })
+})
+
 describe("E2E — request-seeded flows", () => {
     test("create course via HTTP, then duplicate returns 422", async () => {
         await e2eSpec
@@ -398,5 +422,58 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
                 server.close(() => resolve())
             })
         }
+    })
+})
+
+// ---------------------------------------------------------------------------
+// Idempotent command retry — integration tests (real Postgres)
+// ---------------------------------------------------------------------------
+
+describe("Idempotent command retry — Postgres", () => {
+    let pool: Pool
+    let eventStore: PostgresEventStore
+
+    beforeAll(async () => {
+        pool = await getTestPgDatabasePool({ max: 5 })
+        eventStore = new PostgresEventStore({ pool })
+        await eventStore.ensureInstalled()
+    })
+
+    afterEach(async () => {
+        await pool.query("TRUNCATE TABLE events")
+        await pool.query("ALTER SEQUENCE events_sequence_position_seq RESTART WITH 1")
+        eventStore = new PostgresEventStore({ pool })
+    })
+
+    afterAll(async () => {
+        if (pool) await pool.end()
+    })
+
+    test("retry with same Idempotency-Key returns same ETag and only one event in store", async () => {
+        const app = getApplication({
+            apis: [configureRoutes({ store: eventStore, pool })]
+        })
+        const agent = supertest(app)
+        const key = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+        // First request
+        const first = await agent
+            .post("/courses")
+            .set("Idempotency-Key", key)
+            .send({ id: "c1", title: "Math", capacity: 30 })
+        expect(first.status).toBe(201)
+        expect(first.headers["etag"]).toBe('"1"')
+
+        // Retry — same key
+        const retry = await agent
+            .post("/courses")
+            .set("Idempotency-Key", key)
+            .send({ id: "c1", title: "Math", capacity: 30 })
+        expect(retry.status).toBe(201)
+        expect(retry.headers["etag"]).toBe('"1"')
+
+        // Only one event in the database
+        const result = await pool.query<{ count: string }>("SELECT COUNT(*) AS count FROM events")
+        expect(parseInt(result.rows[0].count)).toBe(1)
     })
 })

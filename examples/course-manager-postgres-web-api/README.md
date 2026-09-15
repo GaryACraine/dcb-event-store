@@ -14,6 +14,8 @@ two read-your-writes patterns.
   long-lived client receives confirmation the moment a write lands, with no polling needed
 - **Consistency enforcement** — duplicates, over-capacity subscriptions, and missing resources are
   rejected with RFC 9457 problem details
+- **Idempotent commands** — `Idempotency-Key` header makes retried POSTs safe; the server returns
+  the same ETag without appending a duplicate event
 
 ## Architecture
 
@@ -57,9 +59,10 @@ pnpm -r run build
 pnpm --filter @dcb-es/examples-course-manager-postgres-web-api test --reporter=verbose
 ```
 
-Look for `Scenario: course enrollment lifecycle` in the output. Each of the 16 steps logs its
+Look for `Scenario: course enrollment lifecycle` in the output. Each of the 18 steps logs its
 request, response status, ETag, and payload so you can follow the complete data flow, including
-both read-your-writes patterns and the two-page keyset pagination demo (steps 15–16).
+both read-your-writes patterns, the two-page keyset pagination demo (steps 15–16), and the
+idempotent command retry demo (steps 17–18).
 
 ## Running the server manually
 
@@ -251,6 +254,51 @@ curl -s http://localhost:3000/students/charlie \
 # {"id":"charlie","subscribedCourses":[{"courseId":"ts101","title":"Introduction to TypeScript",...}]}
 ```
 
+### Idempotent Commands
+
+Any write route accepts an optional `Idempotency-Key` header containing a UUID. The server stores
+this as the event's `message_id`. On retry, a pre-check queries the events table for an existing
+event with that `message_id`. If found, the server short-circuits before running the decision model
+and returns the same ETag, so the caller gets an identical response without appending a duplicate
+event.
+
+```bash
+# Generate a key once (e.g. with uuidgen)
+KEY=$(uuidgen | tr '[:upper:]' '[:lower:]')
+
+# First request — creates the course, ETag: "1"
+curl -s -D - -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"id":"ts101","title":"Introduction to TypeScript","capacity":2}'
+# HTTP/1.1 201 Created
+# ETag: "1"
+# {"id":"ts101"}
+
+# Retry with the same key — server finds existing event, returns same ETag
+curl -s -D - -X POST http://localhost:3000/courses \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $KEY" \
+  -d '{"id":"ts101","title":"Introduction to TypeScript","capacity":2}'
+# HTTP/1.1 201 Created
+# ETag: "1"          ← same position; no duplicate event written
+# {"id":"ts101"}
+```
+
+**How it works:**
+
+1. The client supplies a stable UUID as `Idempotency-Key` when sending a command.
+2. `handle()` stores it as `DcbEvent.id` (the `message_id` column in Postgres). The unique index
+   on `message_id` silently ignores a second insert with the same UUID.
+3. On retry, the route's pre-check queries `SELECT sequence_position FROM events WHERE message_id =
+   $key`. If found, it returns the cached position directly, bypassing the decision model entirely.
+   This prevents the decision model from throwing "already exists" on the second call.
+4. The response — status, ETag, and body — is identical to the original, making the operation safe
+   to retry after a network failure or timeout.
+
+For commands that emit multiple events, the server derives per-event UUIDs deterministically from
+the key using UUID v5, so all events in a multi-event command are also idempotent.
+
 ### Stopping the server
 
 ```bash
@@ -261,18 +309,18 @@ docker stop dcb-pg
 
 ## API endpoints
 
-| Method | Path                                        | Response                           |
-|--------|---------------------------------------------|------------------------------------|
-| POST   | /courses                                    | 201 `{ id }` + `ETag: "<pos>"`    |
-| POST   | /students                                   | 201 `{ id }` + `ETag: "<pos>"`    |
-| PUT    | /courses/:courseId/capacity                 | 204 + `ETag: "<pos>"`             |
-| POST   | /courses/:courseId/subscriptions            | 201 + `ETag: "<pos>"`             |
-| DELETE | /courses/:courseId/subscriptions/:studentId | 204 + `ETag: "<pos>"`             |
-| GET    | /courses                                    | 200 `{ data, cursor? }` + `ETag: "<pos>"` (`?limit=N&cursor=<id>`) |
-| GET    | /courses/:courseId                          | 200 doc + `ETag: "<pos>"`         |
-| GET    | /students/:studentId                        | 200 doc + `ETag: "<pos>"`         |
-| GET    | /events                                     | text/event-stream                 |
-| GET    | /health/live                                | 200 `{"status":"ok"}`             |
+| Method | Path                                        | Idempotency-Key | Response                           |
+|--------|---------------------------------------------|-----------------|-------------------------------------|
+| POST   | /courses                                    | optional        | 201 `{ id }` + `ETag: "<pos>"`    |
+| POST   | /students                                   | optional        | 201 `{ id }` + `ETag: "<pos>"`    |
+| PUT    | /courses/:courseId/capacity                 | optional        | 204 + `ETag: "<pos>"`             |
+| POST   | /courses/:courseId/subscriptions            | optional        | 201 + `ETag: "<pos>"`             |
+| DELETE | /courses/:courseId/subscriptions/:studentId | optional        | 204 + `ETag: "<pos>"`             |
+| GET    | /courses                                    | —               | 200 `{ data, cursor? }` + `ETag: "<pos>"` (`?limit=N&cursor=<id>`) |
+| GET    | /courses/:courseId                          | —               | 200 doc + `ETag: "<pos>"`         |
+| GET    | /students/:studentId                        | —               | 200 doc + `ETag: "<pos>"`         |
+| GET    | /events                                     | —               | text/event-stream                 |
+| GET    | /health/live                                | —               | 200 `{"status":"ok"}`             |
 
 ## How it differs from course-manager-web-api
 
