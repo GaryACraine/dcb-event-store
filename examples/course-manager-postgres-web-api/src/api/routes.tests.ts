@@ -163,6 +163,75 @@ describe("POST /courses — idempotency key (unit, MemoryEventStore)", () => {
     })
 })
 
+// ---------------------------------------------------------------------------
+// Validation tests — 400 responses for invalid request bodies
+// ---------------------------------------------------------------------------
+
+describe("POST /courses — request body validation", () => {
+    test("returns 400 when capacity is missing", async () => {
+        await spec.when(agent => agent.post("/courses").send({ id: "c1", title: "Math" })).then(expectError(400))
+    })
+
+    test("returns 400 when capacity is zero", async () => {
+        await spec
+            .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 0 }))
+            .then(expectError(400))
+    })
+
+    test("returns 400 when capacity is a string", async () => {
+        await spec
+            .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: "thirty" }))
+            .then(expectError(400))
+    })
+
+    test("returns 400 when title is empty string", async () => {
+        await spec
+            .when(agent => agent.post("/courses").send({ id: "c1", title: "", capacity: 30 }))
+            .then(expectError(400))
+    })
+})
+
+describe("POST /students — request body validation", () => {
+    test("returns 400 when name is missing", async () => {
+        await spec.when(agent => agent.post("/students").send({ id: "s1" })).then(expectError(400))
+    })
+
+    test("returns 400 when name is empty string", async () => {
+        await spec.when(agent => agent.post("/students").send({ id: "s1", name: "" })).then(expectError(400))
+    })
+})
+
+describe("PUT /courses/:courseId/capacity — request body validation", () => {
+    test("returns 400 when newCapacity is negative", async () => {
+        await spec
+            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: -1 }))
+            .then(expectError(400))
+    })
+
+    test("returns 400 when newCapacity is zero", async () => {
+        await spec
+            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 0 }))
+            .then(expectError(400))
+    })
+})
+
+describe("POST /courses/:courseId/subscriptions — request body validation", () => {
+    test("returns 400 when studentId is missing", async () => {
+        await spec
+            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .when(agent => agent.post("/courses/c1/subscriptions").send({}))
+            .then(expectError(400))
+    })
+})
+
+describe("GET /openapi.json", () => {
+    test("returns a valid OpenAPI 3.1.0 document", async () => {
+        await spec.when(agent => agent.get("/openapi.json")).then(expectResponse(200, { body: { openapi: "3.1.0" } }))
+    })
+})
+
 describe("E2E — request-seeded flows", () => {
     test("create course via HTTP, then duplicate returns 422", async () => {
         await e2eSpec

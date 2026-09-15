@@ -840,7 +840,7 @@ pure and would be Easy.
 | 10.5 | `phase-10.5/api-specification` | complete | N/A (no append/read/lock changes) |
 | 10.6 | `phase-10.6/read-side` | complete | N/A (no append/read/lock changes) |
 | 10.3 | `phase-10.3/idempotent-commands` | complete | N/A (no append/read/lock changes) |
-| 10.7 | `phase-10.7/validation-openapi` | not started | |
+| 10.7 | `phase-10.7/validation-openapi` | complete | N/A (no append/read/lock changes) |
 | 10.2 | `phase-10.2/etag-semantics` | not started | |
 
 ## 13. Known issues

@@ -11,6 +11,7 @@ import {
     withETag,
     parsePageParams,
     getIdempotencyKey,
+    validateBody,
     type WebApiSetup,
     type WaitFunction
 } from "@dcb-es/event-store-express"
@@ -24,6 +25,13 @@ import {
 } from "./Deciders.js"
 import { PROJECTION_NAME } from "./PostgresCourseSubscriptionsProjection.js"
 import type { CourseDoc, StudentDoc } from "./PostgresCourseSubscriptionsProjection.js"
+import {
+    RegisterCourseSchema,
+    RegisterStudentSchema,
+    UpdateCourseCapacitySchema,
+    SubscribeStudentSchema
+} from "./Schemas.js"
+import { buildOpenApiDocument } from "./openapi.js"
 
 export interface RouteDependencies {
     store: EventStore
@@ -58,6 +66,8 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
         return undefined
     }
 
+    const openApiDoc = buildOpenApiDocument()
+
     return router => {
         // Apply preferWait middleware to all routes when waitFn is provided
         if (waitFn) {
@@ -67,8 +77,9 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
         // Write routes
         router.post(
             "/courses",
+            validateBody(RegisterCourseSchema),
             on(async req => {
-                const { id, title, capacity } = req.body as { id: string; title: string; capacity: number }
+                const { id, title, capacity } = req.body
                 const idempotencyKey = getIdempotencyKey(req)
                 const existingPosition = await findExistingPosition(idempotencyKey)
                 const position =
@@ -88,8 +99,9 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
 
         router.post(
             "/students",
+            validateBody(RegisterStudentSchema),
             on(async req => {
-                const { id, name } = req.body as { id: string; name: string }
+                const { id, name } = req.body
                 const idempotencyKey = getIdempotencyKey(req)
                 const existingPosition = await findExistingPosition(idempotencyKey)
                 const position =
@@ -109,9 +121,10 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
 
         router.put(
             "/courses/:courseId/capacity",
+            validateBody(UpdateCourseCapacitySchema),
             on(async req => {
                 const courseId = req.params["courseId"] as string
-                const { newCapacity } = req.body as { newCapacity: number }
+                const { newCapacity } = req.body
                 const idempotencyKey = getIdempotencyKey(req)
                 const existingPosition = await findExistingPosition(idempotencyKey)
                 const position =
@@ -131,9 +144,10 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
 
         router.post(
             "/courses/:courseId/subscriptions",
+            validateBody(SubscribeStudentSchema),
             on(async req => {
                 const courseId = req.params["courseId"] as string
-                const { studentId } = req.body as { studentId: string }
+                const { studentId } = req.body
                 const idempotencyKey = getIdempotencyKey(req)
                 const existingPosition = await findExistingPosition(idempotencyKey)
                 const position =
@@ -266,6 +280,9 @@ export function configureRoutes(deps: RouteDependencies): WebApiSetup {
                 }
             })
         )
+
+        // OpenAPI document
+        router.get("/openapi.json", (_req, res) => res.json(openApiDoc))
 
         // SSE event feed
         router.get("/events", sseEventFeed(store))
