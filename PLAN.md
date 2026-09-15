@@ -798,6 +798,12 @@ and 9 are deferred; work proceeds directly from Phase 7 to Phase 10.
 | 10.7 | `phase-10.7/validation-openapi` | Zod request body validation, OpenAPI 3.1 generation, `GET /openapi.json` | 10.4 |
 | 10.2 | `phase-10.2/etag-semantics` | ETags with DCB semantics: `resourceVersion()`, `If-Match` as client-intent guard (412) vs append condition (409), concurrency modes | 10.4, 10.5 |
 
+> **Skipped.** DCB's `appendCondition` already provides stronger correctness guarantees
+> than If-Match optimistic concurrency. The If-Match write-side guard adds complexity
+> (artificial version-query convention, `resourceVersion()`) for no correctness benefit.
+> The read-side ETag use cases (response ETags, `Prefer: wait`, `If-None-Match`) are
+> complete as of phase 10.6.
+
 ---
 
 ## 11. Workflows — analysis, not a phase yet
@@ -841,7 +847,7 @@ pure and would be Easy.
 | 10.6 | `phase-10.6/read-side` | complete | N/A (no append/read/lock changes) |
 | 10.3 | `phase-10.3/idempotent-commands` | complete | N/A (no append/read/lock changes) |
 | 10.7 | `phase-10.7/validation-openapi` | complete | N/A (no append/read/lock changes) |
-| 10.2 | `phase-10.2/etag-semantics` | not started | |
+| 10.2 | `phase-10.2/etag-semantics` | skipped — out of scope | N/A |
 
 ## 13. Known issues
 
