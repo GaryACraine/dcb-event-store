@@ -13,6 +13,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-pongo` | Pongo JSONB documents | `pongoProjection`, Pongo collections, JSONB document read models |
 | `course-manager-cli-with-inline-projection` | Pongo JSONB documents | `inlineProjections`, atomic read model updates, no consumer/waitUntilProcessed |
 | `course-manager-web-api` | In-memory (no Postgres) | `ApiSpecification`, `ApiE2ESpecification`, Express HTTP routes, `on()`, response helpers |
+| `course-manager-web-api-sliced` | PostgreSQL (Pongo projections) | Vertical slice architecture, bounded contexts, global tag constants, independent projections with private lookup collections |
 
 Most examples require a running PostgreSQL instance and use [`PostgresEventStore`](postgres/postgres-event-store.md) as the write-side store. The `course-manager-cli-with-decider-specs` and `course-manager-web-api` examples are the exceptions -- they run entirely in-memory using `MemoryEventStore` and need no Docker or Postgres.
 
@@ -720,3 +721,102 @@ The test file (`routes.tests.ts`) splits into two describe blocks:
    start a `createConsumer` with the Pongo projection, issue HTTP requests,
    and use `Prefer: wait` to block until the projection is consistent before
    asserting on read results.
+
+---
+
+## course-manager-web-api-sliced
+
+**Location:** [`examples/course-manager-web-api-sliced/`](../examples/course-manager-web-api-sliced/)
+
+**Phase:** 11 — Vertical slice architecture
+**Base:** `course-manager-postgres-web-api`
+
+This example restructures the Postgres web API into a **vertical slice architecture** with bounded
+contexts and fully independent projections. The runtime behaviour, endpoints, and features are
+identical to the base example; the differences are entirely structural.
+
+### What it adds
+
+- **Vertical slice structure** — code is organised as `contexts/<name>/slices/<slice>/`. Each
+  slice directory is self-contained: `command.ts`, `decisionModels.ts`, `decider.ts`, `schema.ts`,
+  `route.ts`, and `route.tests.ts` live together. Adding or removing a feature means adding or
+  removing its directory and one line in the composition root.
+- **Bounded context boundary** — domain events are grouped at the context level in
+  `contexts/enrollment/Events.ts` rather than scattered across slices. The context is the public
+  contract; slices within it import from this shared file.
+- **Global tag constants** — tag key strings (`courseId`, `studentId`, `studentNumberIndex`) are
+  defined once in `shared/Tags.ts` as named constants. All events and decision models import them.
+  A typo in a tag key becomes a compile error, not a silent query miss.
+- **Independent projections** — the base example had two Pongo projections that cross-read each
+  other's collections, creating temporal coupling. Here each projection is causally self-contained:
+  it subscribes to whichever events carry the data it needs and maintains its own private lookup
+  collection. No projection ever reads from a collection owned by another.
+
+### Independent projections in depth
+
+The cross-collection reads in the base example were a latent defect: the course projection would
+produce an incomplete document (missing student name) if it processed `studentWasSubscribed`
+before the student projection had processed `studentWasRegistered`. Tests worked around this with
+an explicit `waitUntilProcessed` on the *other* projection — a test-level symptom of a design-level
+problem.
+
+The fix is that each projection subscribes to all events it needs:
+
+| Projection | Subscribes to | Primary collection | Private lookup |
+|---|---|---|---|
+| `CourseDetailsProjection` | course events + `studentWasRegistered` | `courses` | `_course_projection_students` |
+| `StudentDetailsProjection` | student events + course events | `students` | `_student_projection_courses` |
+
+On `studentWasSubscribed`, the course projection reads from `_course_projection_students` (which
+it populated from `studentWasRegistered`) — never from the `students` collection. The student
+projection reads from `_student_projection_courses` (populated from `courseWasRegistered`) — never
+from `courses`. Each `truncate` also cleans up its own private lookup.
+
+Consequences:
+- **Rebuild safety**: rebuilding one projection truncates only its own collections; the other is
+  unaffected.
+- **Independent test files**: each read slice test starts only its own consumer. No `waitUntilProcessed`
+  on the other projection.
+- **Removability**: dropping a projection from the consumer requires no changes outside its own
+  slice directory and `index.ts`.
+
+### Entry point wiring
+
+`src/index.ts` is the composition root — the only file that imports from all slices:
+
+```typescript
+// Each slice exposes a single configure function
+import { configureRegisterCourseRoute } from "./contexts/enrollment/slices/register-course/route.js"
+import { configureCourseDetailsRoute } from "./contexts/enrollment/slices/course-details/route.js"
+// ...
+
+const app = getApplication({
+    apis: [
+        configureRegisterCourseRoute(deps),
+        configureRegisterStudentRoute(deps),
+        // ...
+        configureCourseDetailsRoute({ ...deps, waitFn: courseWaitFn }),
+        configureStudentDetailsRoute({ ...deps, waitFn: studentWaitFn }),
+        configureEventFeedRoute(eventStore),
+        configureOpenApiRoute()
+    ]
+})
+```
+
+Adding a new write or read slice is a two-step operation: create the slice directory, add its
+`configure` call here.
+
+### How it differs from `course-manager-postgres-web-api`
+
+| Aspect | `course-manager-postgres-web-api` | `course-manager-web-api-sliced` |
+|--------|-----------------------------------|----------------------------------|
+| Directory structure | Flat `src/api/` | `contexts/<name>/slices/<slice>/` hierarchy |
+| Bounded contexts | Implicit | Explicit — `contexts/enrollment/Events.ts` |
+| Tag key strings | Magic strings | Constants in `shared/Tags.ts` |
+| Slice encapsulation | Shared `Deciders.ts`, `routes.ts` | Each slice owns its own files |
+| Projection coupling | Cross-collection reads between projections | No cross-reads; private lookup collections |
+| Test isolation | Course-details test depends on student projection | Each test file is fully standalone |
+| Rebuild safety | Rebuilding one truncates data the other reads | Each projection owns and truncates only its collections |
+| Composition root | Inline in `index.ts` | All route registration in `index.ts`; no slice knows about others |
+| Runtime behaviour | — | Identical |
+| API endpoints | — | Identical |

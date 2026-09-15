@@ -1,0 +1,73 @@
+import { EventHandlerWithState, Tags } from "@dcb-es/event-store"
+import {
+    CourseWasRegisteredEvent,
+    CourseCapacityWasChangedEvent,
+    StudentWasSubscribedEvent,
+    StudentWasUnsubscribedEvent
+} from "../../Events.js"
+
+export const CourseExists = (courseId: string): EventHandlerWithState<CourseWasRegisteredEvent, boolean> => ({
+    tagFilter: Tags.fromObj({ courseId }),
+    init: false,
+    when: {
+        courseWasRegistered: () => true
+    }
+})
+
+export const CourseCapacity = (
+    courseId: string
+): EventHandlerWithState<
+    CourseWasRegisteredEvent | CourseCapacityWasChangedEvent | StudentWasSubscribedEvent | StudentWasUnsubscribedEvent,
+    { subscriberCount: number; capacity: number }
+> => ({
+    tagFilter: Tags.fromObj({ courseId }),
+    init: { subscriberCount: 0, capacity: 0 },
+    when: {
+        courseWasRegistered: ({ event }) => ({
+            capacity: event.data.capacity,
+            subscriberCount: 0
+        }),
+        courseCapacityWasChanged: ({ event }, { subscriberCount }) => ({
+            subscriberCount,
+            capacity: event.data.newCapacity
+        }),
+        studentWasSubscribed: (_eventEnvelope, { capacity, subscriberCount }) => ({
+            subscriberCount: subscriberCount + 1,
+            capacity
+        }),
+        studentWasUnsubscribed: (_eventEnvelope, { capacity, subscriberCount }) => ({
+            subscriberCount: subscriberCount - 1,
+            capacity
+        })
+    }
+})
+
+export const StudentAlreadySubscribed = ({
+    courseId,
+    studentId
+}: {
+    courseId: string
+    studentId: string
+}): EventHandlerWithState<StudentWasSubscribedEvent | StudentWasUnsubscribedEvent, boolean> => ({
+    tagFilter: Tags.fromObj({ courseId, studentId }),
+    init: false,
+    when: {
+        studentWasSubscribed: () => true,
+        studentWasUnsubscribed: () => false
+    }
+})
+
+export const StudentSubscriptions = (
+    studentId: string
+): EventHandlerWithState<StudentWasSubscribedEvent | StudentWasUnsubscribedEvent, { subscriptionCount: number }> => ({
+    tagFilter: Tags.fromObj({ studentId }),
+    init: { subscriptionCount: 0 },
+    when: {
+        studentWasSubscribed: (_eventEnvelope, { subscriptionCount }) => ({
+            subscriptionCount: subscriptionCount + 1
+        }),
+        studentWasUnsubscribed: (_eventEnvelope, { subscriptionCount }) => ({
+            subscriptionCount: subscriptionCount - 1
+        })
+    }
+})

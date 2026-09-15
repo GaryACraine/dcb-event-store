@@ -175,6 +175,26 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   `waitUntilProcessed` from `event-store-postgres` as the `waitFn`, achieving
   read-your-writes semantics over HTTP without polling.
 
+- **Vertical slice architecture** (Phase 11) — the recommended structure for
+  web API examples. Code is organised as `contexts/<name>/slices/<slice>/`,
+  where each slice directory contains its command type, decision models,
+  decider, Zod schema, route, and tests. Write slices produce events; read
+  slices project them; infrastructure slices (SSE feed, OpenAPI) stand alone.
+  The composition root (`index.ts`) is the only file that knows all slices.
+  Context-level `Events.ts` files define the domain events shared across
+  slices. Global tag key constants live in `shared/Tags.ts`.
+- **Independent projections** — each projection must own all data it needs
+  to build its read model. Projections must never cross-read another
+  projection's collections (no temporal coupling, no ordering dependency
+  between projections). When a projection needs denormalised data from
+  another aggregate's events, it subscribes to those events in its own
+  `canHandle` query and maintains a private lookup collection (prefixed
+  `_<projection>_<entity>`, e.g. `_course_projection_students`). The
+  private lookup is populated by handling the relevant events (e.g.
+  `studentWasRegistered`) and is truncated alongside the primary collection
+  in `truncate`. This ensures projections can be independently deployed,
+  rebuilt, or removed without breaking others.
+
 ## Repo shape
 
 - `packages/event-store` — `@dcb-es/event-store`: core types, `Query`, `Tags`,

@@ -424,6 +424,49 @@ importers:
         specifier: workspace:*
         version: link:../../packages/event-store-express
 
+  examples/course-manager-web-api-sliced:
+    dependencies:
+      '@asteasolutions/zod-to-openapi':
+        specifier: ^7.0.0
+        version: 7.3.4(zod@3.25.76)
+      '@dcb-es/event-store':
+        specifier: workspace:*
+        version: link:../../packages/event-store
+      '@dcb-es/event-store-express':
+        specifier: workspace:*
+        version: link:../../packages/event-store-express
+      '@dcb-es/event-store-postgres':
+        specifier: workspace:*
+        version: link:../../packages/event-store-postgres
+      '@event-driven-io/dumbo':
+        specifier: '>=0.13.0-beta.52'
+        version: 0.13.0-betabeta.50(@types/pg@8.20.0)(pg@8.20.0)
+      '@event-driven-io/pongo':
+        specifier: '>=0.17.0-beta.52'
+        version: 0.17.0-betabeta.50(@types/pg@8.20.0)(pg@8.20.0)
+      pg:
+        specifier: ^8.20.0
+        version: 8.20.0
+      zod:
+        specifier: ^3.0.0
+        version: 3.25.76
+    devDependencies:
+      '@testcontainers/postgresql':
+        specifier: ^10.9.0
+        version: 10.28.0
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
+      supertest:
+        specifier: ^7.1.0
+        version: 7.2.2
+      testcontainers:
+        specifier: ^10.9.0
+        version: 10.28.0
+
   packages/event-store:
     dependencies:
       uuid:
