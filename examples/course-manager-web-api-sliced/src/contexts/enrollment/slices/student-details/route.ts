@@ -1,5 +1,4 @@
 import { on, OK, withETag, preferWait, type WebApiSetup, type WaitFunction } from "@dcb-es/event-store-express"
-import type { Pool } from "pg"
 import type { SliceDependencies } from "../../../../shared/dependencies.js"
 import { STUDENT_PROJECTION_NAME } from "./projection.js"
 import type { StudentDoc } from "./projection.js"

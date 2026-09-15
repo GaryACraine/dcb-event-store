@@ -7,7 +7,6 @@ import {
     type WebApiSetup,
     type WaitFunction
 } from "@dcb-es/event-store-express"
-import type { Pool } from "pg"
 import type { SliceDependencies } from "../../../../shared/dependencies.js"
 import { COURSE_PROJECTION_NAME } from "../course-details/projection.js"
 import type { CourseDoc } from "../course-details/projection.js"

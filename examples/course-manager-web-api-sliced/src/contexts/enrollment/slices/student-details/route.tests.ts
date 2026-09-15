@@ -25,9 +25,7 @@ describe("Student details — Postgres integration", () => {
         return createConsumer({
             pool,
             eventStore: store,
-            processors: [
-                projectionToProcessor(studentDetailsProjection, { batchSize: 100, startFrom: "BEGINNING" })
-            ]
+            processors: [projectionToProcessor(studentDetailsProjection, { batchSize: 100, startFrom: "BEGINNING" })]
         })
     }
 

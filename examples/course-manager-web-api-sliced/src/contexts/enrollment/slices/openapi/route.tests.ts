@@ -1,11 +1,9 @@
 import { describe, test } from "vitest"
-import type { Pool } from "pg"
 import { ApiSpecification, expectResponse } from "@dcb-es/event-store-express"
-import type { EventStore } from "@dcb-es/event-store"
 import { configureOpenApiRoute } from "./route.js"
 
 const spec = ApiSpecification.for({
-    configureApi: (_store: EventStore) => configureOpenApiRoute()
+    configureApi: () => configureOpenApiRoute()
 })
 
 describe("GET /openapi.json", () => {
