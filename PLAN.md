@@ -145,6 +145,7 @@ Rules:
 | 8 | `course-manager-cli-with-otel` | `course-manager-cli-with-projections` | Console span exporter showing append, read and projection spans |
 | 9 | `migrations-script` | — | Script applying migrations to an existing v1 schema |
 | 10 | `course-manager-web-api` | `course-manager-cli-with-projections` | The course manager as an HTTP API: commands with ETags and idempotency keys, read-model queries, an SSE event feed, `ApiSpecification` tests, OpenAPI document; README with a curl walkthrough |
+| 11 | `course-manager-web-api-sliced` | `course-manager-web-api` | Vertical slice architecture: bounded contexts, global tag constants, one directory per slice, independent projections with private lookup collections |
 
 ### 0.7 Reference path shorthand
 
@@ -828,6 +829,125 @@ pure and would be Easy.
 
 ---
 
+## 11a. Phase 11 — Vertical slice architecture
+
+**Goal.** A new `course-manager-web-api-sliced` example that restructures the
+Phase 10 web API from a flat `api/` directory into a vertical slice
+architecture with bounded contexts, shared global tags, and fully independent
+projections. No library changes — this is purely an example-level
+architectural pattern.
+
+**Example name:** `course-manager-web-api-sliced`
+**Base example:** `course-manager-web-api`
+
+| Phase | Example name | Base example | What it shows |
+|---|---|---|---|
+| 11 | `course-manager-web-api-sliced` | `course-manager-web-api` | Vertical slice architecture, bounded contexts, global tag constants, independent projections with private lookup collections |
+
+### 11.1 Directory structure — contexts and slices
+
+The flat `src/api/` directory from Phase 10 is replaced by a hierarchy that
+mirrors bounded contexts and individual slices:
+
+```
+src/
+├── contexts/
+│   └── enrollment/           # bounded context
+│       ├── Events.ts         # all domain events for this context
+│       └── slices/
+│           ├── register-course/      # write slice
+│           │   ├── command.ts        # DcbCommand type alias
+│           │   ├── decider.ts        # decider (handlers + decide)
+│           │   ├── decisionModels.ts # EventHandlerWithState factories
+│           │   ├── schema.ts         # Zod validation + OpenAPI metadata
+│           │   ├── route.ts          # Express route (configureXxxRoute)
+│           │   └── route.tests.ts    # ApiSpecification + E2E tests
+│           ├── register-student/     # write slice
+│           ├── subscribe-student/    # write slice
+│           ├── unsubscribe-student/  # write slice
+│           ├── change-course-capacity/ # write slice
+│           ├── course-details/       # read slice (projection + route)
+│           │   ├── projection.ts     # pongoProjection
+│           │   ├── route.ts
+│           │   └── route.tests.ts
+│           ├── student-details/      # read slice
+│           ├── course-list/          # read slice (shares projection)
+│           ├── event-feed/           # infrastructure slice (SSE)
+│           └── openapi/              # infrastructure slice
+├── shared/
+│   ├── Tags.ts               # global tag key constants
+│   ├── dependencies.ts       # SliceDependencies interface
+│   └── idempotency.ts        # shared idempotency-key lookup
+├── index.ts                  # composition root
+└── scenario.tests.ts         # full lifecycle E2E test
+```
+
+Each slice is self-contained: its command type, decision models, decider,
+validation schema, route, and tests live together. A slice can be added or
+removed by adding/removing its directory and one line in the composition root
+(`index.ts`).
+
+### 11.2 Global tag constants
+
+Tag keys (`courseId`, `studentId`, `studentNumberIndex`) are defined once in
+`src/shared/Tags.ts` as string constants. Events and decision models import
+these constants rather than using magic strings. This ensures tag keys are
+consistent across contexts and enables safe rename-refactoring.
+
+### 11.3 Context-level events
+
+Domain events are grouped by bounded context (`contexts/enrollment/Events.ts`),
+not scattered across slices. Multiple slices within the same context import
+from the shared Events file. This reflects the fact that events are the
+context's public contract — write slices produce them, read slices and other
+contexts consume them.
+
+### 11.4 Independent projections
+
+The Phase 10 example had two Pongo projections (`CourseDetailsProjection` and
+`StudentDetailsProjection`) that cross-read each other's collections: the
+course projection looked up the `students` collection to denormalise student
+names, and the student projection looked up the `courses` collection for
+course titles. This created temporal coupling — tests had to
+`waitUntilProcessed` on the *other* projection before issuing a subscription
+command, and the two projections could not be deployed, rebuilt, or removed
+independently.
+
+The fix follows the principle that **each projection owns all the data it
+needs**. Each projection subscribes to the events that carry the data it
+requires and maintains its own private lookup collection:
+
+- `CourseDetailsProjection` now also handles `studentWasRegistered` and
+  stores student data in a private `_course_projection_students` collection.
+  On `studentWasSubscribed`, it reads from its own lookup — never from the
+  `students` collection owned by the student projection.
+
+- `StudentDetailsProjection` now also handles `courseWasRegistered`,
+  `courseTitleWasChanged`, and `courseCapacityWasChanged`, storing course
+  data in a private `_student_projection_courses` collection. On
+  `studentWasSubscribed`, it reads from its own lookup — never from the
+  `courses` collection owned by the course projection.
+
+Each projection can be added, removed, rebuilt, or run at a different
+processing speed without affecting the other. The `truncate` function cleans
+up the private lookup tables alongside the primary collection. Each slice's
+tests only set up their own projection — no imports or dependencies on the
+other projection's consumer.
+
+### 11.5 Composition root
+
+`src/index.ts` is the only file that knows about all slices. It wires
+dependencies, starts projections, and registers routes. Adding a new slice
+means adding its `configureXxxRoute(deps)` call here and nothing else.
+
+**Touches.** No library packages changed. Example-only.
+
+**Done when.** All 27 tests green (9 test files); scenario lifecycle test
+passes end-to-end including subscription with denormalised student/course
+data; projections are independently testable with no cross-projection waits.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -848,6 +968,7 @@ pure and would be Easy.
 | 10.3 | `phase-10.3/idempotent-commands` | complete | N/A (no append/read/lock changes) |
 | 10.7 | `phase-10.7/validation-openapi` | complete | N/A (no append/read/lock changes) |
 | 10.2 | `phase-10.2/etag-semantics` | skipped — out of scope | N/A |
+| 11 | `phase-11/web-api-sliced` | in progress | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 
