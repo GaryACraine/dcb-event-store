@@ -3,6 +3,7 @@
     "compilerOptions": {
         "outDir": "./dist",
         "noEmit": true,
+        "rootDir": "../..",
         "paths": {
             "@test/*": ["../../test/*", "../../test/*.ts"]
         }
