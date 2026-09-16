@@ -8,6 +8,7 @@
     "scripts": {
         "start": "node dist/index.js",
         "test": "vitest run",
+        "test:scenario": "vitest run --reporter=verbose src/scenario.tests.ts",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
         "build": "tsc -p tsconfig.build.json",
