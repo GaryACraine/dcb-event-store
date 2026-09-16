@@ -262,5 +262,54 @@ describe("Scenario: course enrollment lifecycle", () => {
             .send({ id: "idempotent101", title: "Idempotent Course", capacity: 10 })
         expect(step18.status).toBe(201)
         expect(step18.headers["etag"]).toBe(idempotentETag)
+
+        // Step 19: Subscribe alice to a non-existent course — course-not-found guard
+        const step19 = await agent.post("/courses/nonexistent101/subscriptions").send({ studentId: "alice" })
+        expect(step19.status).toBe(404)
+        expect(step19.body.detail).toBe("Course nonexistent101 doesn't exist.")
+
+        // Step 20: Register java101 (setup for subscription-limit test)
+        const step20 = await agent.post("/courses").send({ id: "java101", title: "Introduction to Java", capacity: 10 })
+        expect(step20.status).toBe(201)
+
+        // Step 21: Register python101 (setup for subscription-limit test)
+        const step21 = await agent
+            .post("/courses")
+            .send({ id: "python101", title: "Introduction to Python", capacity: 10 })
+        expect(step21.status).toBe(201)
+
+        // Step 22: Subscribe alice to extra101 (1st active subscription)
+        const step22 = await agent.post("/courses/extra101/subscriptions").send({ studentId: "alice" })
+        expect(step22.status).toBe(201)
+
+        // Step 23: Subscribe alice to extra101 again — already-subscribed guard
+        const step23 = await agent.post("/courses/extra101/subscriptions").send({ studentId: "alice" })
+        expect(step23.status).toBe(422)
+        expect(step23.body.detail).toBe("Student alice already subscribed to course extra101.")
+
+        // Step 24: Subscribe alice to go101 (2nd active subscription)
+        const step24 = await agent.post("/courses/go101/subscriptions").send({ studentId: "alice" })
+        expect(step24.status).toBe(201)
+
+        // Step 25: Subscribe alice to idempotent101 (3rd active subscription)
+        const step25 = await agent.post("/courses/idempotent101/subscriptions").send({ studentId: "alice" })
+        expect(step25.status).toBe(201)
+
+        // Step 26: Subscribe alice to java101 (4th active subscription)
+        const step26 = await agent.post("/courses/java101/subscriptions").send({ studentId: "alice" })
+        expect(step26.status).toBe(201)
+
+        // Step 27: Subscribe alice to python101 (5th active subscription — fills the limit)
+        const step27 = await agent.post("/courses/python101/subscriptions").send({ studentId: "alice" })
+        expect(step27.status).toBe(201)
+
+        // Step 28: Register rust101 with available capacity (setup for limit guard)
+        const step28 = await agent.post("/courses").send({ id: "rust101", title: "Introduction to Rust", capacity: 10 })
+        expect(step28.status).toBe(201)
+
+        // Step 29: Subscribe alice to rust101 (6th — over the 5-subscription limit)
+        const step29 = await agent.post("/courses/rust101/subscriptions").send({ studentId: "alice" })
+        expect(step29.status).toBe(422)
+        expect(step29.body.detail).toBe("Student alice is already subscribed to the maximum number of courses")
     })
 })
