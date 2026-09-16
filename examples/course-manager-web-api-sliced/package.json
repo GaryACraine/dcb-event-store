@@ -6,7 +6,10 @@
     "type": "module",
     "private": true,
     "scripts": {
+        "db:start": "docker run --rm -d --name dcb-pg -e POSTGRES_USER=dcb -e POSTGRES_PASSWORD=dcb -e POSTGRES_DB=dcb -p 5432:5432 postgres:16",
+        "db:stop": "docker stop dcb-pg",
         "start": "node dist/index.js",
+        "seed": "node dist/seed.js",
         "test": "vitest run",
         "test:scenario": "vitest run --reporter=verbose src/scenario.tests.ts",
         "test:watch": "vitest",
