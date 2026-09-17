@@ -1,7 +1,7 @@
 import {
     EventStore,
     AppendConditionError,
-    DcbEvent,
+    TaggedEvent,
     Query,
     SequencePosition,
     Tags,
@@ -25,7 +25,7 @@ export async function conditionalRetryWorker(
     workerId: number,
     endTime: number,
     query: Query,
-    eventFactory: (workerId: number) => DcbEvent[],
+    eventFactory: (workerId: number) => TaggedEvent[],
 ): Promise<WorkerResult> {
     const result = emptyResult(workerId, "write")
     let lastPosition: SequencePosition | undefined
@@ -81,10 +81,8 @@ export async function scopedBatchWriter(
 
     while (Date.now() < endTime) {
         const events = Array.from({ length: opts.batchSize }, (_, i) => ({
-            type: opts.eventType,
+            event: { type: opts.eventType, data: { seq: iteration * opts.batchSize + i } },
             tags: Tags.fromObj({ scope: scopeTag }),
-            data: { seq: iteration * opts.batchSize + i },
-            metadata: {},
         }))
 
         const opStart = Date.now()
@@ -126,7 +124,7 @@ export async function entityOracleWorker(
     endTime: number,
     opts: {
         entityCount: number
-        eventFactory: (workerId: number, entityIndex: number) => DcbEvent[]
+        eventFactory: (workerId: number, entityIndex: number) => TaggedEvent[]
         readQuery: (entityIndex: number) => Query
         conditionQuery?: (entityIndex: number) => Query
     },

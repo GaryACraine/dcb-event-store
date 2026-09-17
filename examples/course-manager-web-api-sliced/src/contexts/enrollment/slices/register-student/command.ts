@@ -1,3 +1,3 @@
-import { DcbCommand } from "@dcb-es/event-store"
+import { Command } from "@dcb-es/event-store"
 
-export type RegisterStudent = DcbCommand<"registerStudent", { id: string; name: string }>
+export type RegisterStudent = Command<"registerStudent", { id: string; name: string }>

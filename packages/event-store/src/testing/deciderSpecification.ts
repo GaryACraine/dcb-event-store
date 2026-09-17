@@ -1,5 +1,5 @@
-import { DcbEvent, AppendCondition } from "../eventStore/EventStore.js"
-import { DcbCommand } from "../eventStore/DcbCommand.js"
+import { TaggedEvent, AppendCondition } from "../eventStore/EventStore.js"
+import { Command } from "../eventStore/Command.js"
 import { MemoryEventStore } from "../eventStore/memoryEventStore/MemoryEventStore.js"
 import { EventHandlers, EventHandlerStates, buildDecisionModel } from "../eventHandling/buildDecisionModel.js"
 import { Decider } from "../eventHandling/Decider.js"
@@ -9,24 +9,24 @@ import { normalizeForComparison, deepEqual } from "./assertions.js"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ErrorConstructor = new (...args: any[]) => Error
 
-export class DeciderSpecification<TCommand extends DcbCommand, THandlers extends EventHandlers> {
+export class DeciderSpecification<TCommand extends Command, THandlers extends EventHandlers> {
     private constructor(private readonly d: Decider<TCommand, THandlers>) {}
 
-    static for<TCommand extends DcbCommand, THandlers extends EventHandlers>(
+    static for<TCommand extends Command, THandlers extends EventHandlers>(
         d: Decider<TCommand, THandlers>
     ): DeciderSpecification<TCommand, THandlers> {
         return new DeciderSpecification(d)
     }
 
-    given(...events: DcbEvent[]): GivenStage<TCommand, THandlers> {
+    given(...events: TaggedEvent[]): GivenStage<TCommand, THandlers> {
         return new GivenStage(this.d, events)
     }
 }
 
-class GivenStage<TCommand extends DcbCommand, THandlers extends EventHandlers> {
+class GivenStage<TCommand extends Command, THandlers extends EventHandlers> {
     constructor(
         private readonly d: Decider<TCommand, THandlers>,
-        private readonly givenEvents: DcbEvent[]
+        private readonly givenEvents: TaggedEvent[]
     ) {}
 
     when(command: TCommand): WhenStage<TCommand, THandlers> {
@@ -34,23 +34,23 @@ class GivenStage<TCommand extends DcbCommand, THandlers extends EventHandlers> {
     }
 }
 
-class WhenStage<TCommand extends DcbCommand, THandlers extends EventHandlers> {
+class WhenStage<TCommand extends Command, THandlers extends EventHandlers> {
     private resultPromise: Promise<{
-        events: DcbEvent[]
+        events: TaggedEvent[]
         appendCondition: AppendCondition
         error?: Error
     }>
 
     constructor(
         private readonly d: Decider<TCommand, THandlers>,
-        private readonly givenEvents: DcbEvent[],
+        private readonly givenEvents: TaggedEvent[],
         private readonly command: TCommand
     ) {
         this.resultPromise = this.execute()
     }
 
     private async execute(): Promise<{
-        events: DcbEvent[]
+        events: TaggedEvent[]
         appendCondition: AppendCondition
         error?: Error
     }> {
@@ -72,7 +72,7 @@ class WhenStage<TCommand extends DcbCommand, THandlers extends EventHandlers> {
         }
     }
 
-    async then(...expected: DcbEvent[]): Promise<void> {
+    async then(...expected: TaggedEvent[]): Promise<void> {
         const result = await this.resultPromise
 
         if (result.error) {

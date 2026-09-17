@@ -22,8 +22,9 @@ export const deduplicateEvents = (events: SequencedEvent[]): SequencedEvent[] =>
     return Array.from(uniqueEventsMap.values())
 }
 
-export const matchesQueryItem = (queryItem: QueryItem, { event }: SequencedEvent) => {
-    if (queryItem.types && queryItem.types.length > 0 && !queryItem.types.includes(event.type)) return false
+export const matchesQueryItem = (queryItem: QueryItem, sequencedEvent: SequencedEvent) => {
+    if (queryItem.types && queryItem.types.length > 0 && !queryItem.types.includes(sequencedEvent.event.type))
+        return false
 
-    return matchTags({ tagFilter: queryItem.tags, tags: event.tags })
+    return matchTags({ tagFilter: queryItem.tags, tags: sequencedEvent.tags })
 }

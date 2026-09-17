@@ -1,14 +1,12 @@
 import { Pool, PoolClient } from "pg"
-import { DcbEvent, Query, SequencedEvent, Tags, streamAllEventsToArray } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, SequencedEvent, Tags, streamAllEventsToArray } from "@dcb-es/event-store"
 import { PostgresEventStore } from "./PostgresEventStore.js"
 import { Projection } from "../projections/projection.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string, tags: Tags, data: unknown = {}): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata: {}
+const event = (type: string, tags: Tags, data: unknown = {}): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
+    tags
 })
 
 /** Creates a trivial SQL projection that inserts into a tracking table. */

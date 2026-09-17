@@ -1,22 +1,18 @@
 import { Pool } from "pg"
-import { DcbEvent, Query, streamAllEventsToArray, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, streamAllEventsToArray, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "./PostgresEventStore.js"
 import { LockStrategy, advisoryLocks, rowLocks } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { v4 as uuid } from "uuid"
 
-const event = (type: string, tags: Tags, data: unknown = {}, metadata: unknown = {}): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata
+const event = (type: string, tags: Tags, data: unknown = {}, metadata?: unknown): TaggedEvent<AnyEvent> => ({
+    event: { type, data, ...(metadata !== undefined ? { metadata } : {}) } as AnyEvent,
+    tags
 })
 
-const eventWithId = (id: string, type: string, tags: Tags, data: unknown = {}, metadata: unknown = {}): DcbEvent => ({
-    type,
+const eventWithId = (id: string, type: string, tags: Tags, data: unknown = {}): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
     tags,
-    data,
-    metadata,
     id
 })
 
@@ -24,13 +20,10 @@ const eventWithVersion = (
     type: string,
     tags: Tags,
     schemaVersion: string,
-    data: unknown = {},
-    metadata: unknown = {}
-): DcbEvent => ({
-    type,
+    data: unknown = {}
+): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
     tags,
-    data,
-    metadata,
     schemaVersion
 })
 
@@ -70,7 +63,6 @@ describe.each(strategies)("Event Identity [%s]", (_name, createStrategy) => {
             const events = await streamAllEventsToArray(store.read(Query.all()))
             expect(events).toHaveLength(1)
             expect(events[0].id).toBe(id)
-            expect(events[0].event.id).toBe(id)
         })
 
         test("duplicate append returns same position and inserts nothing", async () => {
@@ -238,7 +230,7 @@ describe.each(strategies)("Event Identity [%s]", (_name, createStrategy) => {
             expect(result.rows[0].schema_version).toBe("2")
 
             const events = await streamAllEventsToArray(store.read(Query.all()))
-            expect(events[0].event.schemaVersion).toBe("2")
+            expect(events[0].schemaVersion).toBe("2")
         })
     })
 

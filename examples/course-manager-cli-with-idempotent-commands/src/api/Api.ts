@@ -1,11 +1,11 @@
 import { buildDecisionModel } from "@dcb-es/event-store"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent,
-    CourseTitleWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged,
+    courseTitleWasChanged
 } from "./Events.js"
 
 import {
@@ -32,7 +32,7 @@ export class Api {
         if (state.courseExists) throw new Error(`Course with id ${cmd.id} already exists`)
 
         await this.eventStore.append({
-            events: new CourseWasRegisteredEvent(
+            events: courseWasRegistered(
                 { courseId: cmd.id, title: cmd.title, capacity: cmd.capacity },
                 { id: cmd.idempotencyKey }
             ),
@@ -50,7 +50,7 @@ export class Api {
         if (state.studentAlreadyRegistered) throw new Error(`Student with id ${id} already registered.`)
 
         await this.eventStore.append({
-            events: new StudentWasRegistered(
+            events: studentWasRegistered(
                 { studentId: id, name, studentNumber: state.nextStudentNumber },
                 { id: cmd.idempotencyKey }
             ),
@@ -71,7 +71,7 @@ export class Api {
             throw new Error("New capacity is the same as the current capacity.")
 
         await this.eventStore.append({
-            events: new CourseCapacityWasChangedEvent({ courseId, newCapacity }, { id: cmd.idempotencyKey }),
+            events: courseCapacityWasChanged({ courseId, newCapacity }, { id: cmd.idempotencyKey }),
             condition: appendCondition
         })
     }
@@ -88,7 +88,7 @@ export class Api {
         if (state.courseTitle === newTitle) throw new Error("New title is the same as the current title.")
 
         await this.eventStore.append({
-            events: new CourseTitleWasChangedEvent({ courseId, newTitle }, { id: cmd.idempotencyKey }),
+            events: courseTitleWasChanged({ courseId, newTitle }, { id: cmd.idempotencyKey }),
             condition: appendCondition
         })
     }
@@ -123,10 +123,7 @@ export class Api {
             throw new Error(`Student ${studentId} is already subscribed to the maximum number of courses`)
 
         await this.eventStore.append({
-            events: new StudentWasSubscribedEvent(
-                { courseId, studentId },
-                { id: cmd.idempotencyKey, metadata: cmd.metadata }
-            ),
+            events: studentWasSubscribed({ courseId, studentId }, { id: cmd.idempotencyKey, metadata: cmd.metadata }),
             condition: appendCondition
         })
     }
@@ -147,7 +144,7 @@ export class Api {
             throw new Error(`Student ${studentId} is not subscribed to course ${courseId}.`)
 
         await this.eventStore.append({
-            events: new StudentWasUnsubscribedEvent({ courseId, studentId }, { id: cmd.idempotencyKey }),
+            events: studentWasUnsubscribed({ courseId, studentId }, { id: cmd.idempotencyKey }),
             condition: appendCondition
         })
     }

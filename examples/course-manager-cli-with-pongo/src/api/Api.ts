@@ -5,12 +5,12 @@ import {
 } from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
 import { Pool } from "pg"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent,
-    CourseTitleWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged,
+    courseTitleWasChanged
 } from "./Events.js"
 
 import {
@@ -52,7 +52,7 @@ export class Api {
         if (state.courseExists) throw new Error(`Course with id ${cmd.id} already exists`)
 
         const position = await this.eventStore.append({
-            events: new CourseWasRegisteredEvent({ courseId: cmd.id, title: cmd.title, capacity: cmd.capacity }),
+            events: courseWasRegistered({ courseId: cmd.id, title: cmd.title, capacity: cmd.capacity }),
             condition: appendCondition
         })
         await this.waitForProjection(position)
@@ -68,7 +68,7 @@ export class Api {
         if (state.studentAlreadyRegistered) throw new Error(`Student with id ${id} already registered.`)
 
         const position = await this.eventStore.append({
-            events: new StudentWasRegistered({ studentId: id, name, studentNumber: state.nextStudentNumber }),
+            events: studentWasRegistered({ studentId: id, name, studentNumber: state.nextStudentNumber }),
             condition: appendCondition
         })
         await this.waitForProjection(position)
@@ -87,7 +87,7 @@ export class Api {
             throw new Error("New capacity is the same as the current capacity.")
 
         const position = await this.eventStore.append({
-            events: new CourseCapacityWasChangedEvent({ courseId, newCapacity }),
+            events: courseCapacityWasChanged({ courseId, newCapacity }),
             condition: appendCondition
         })
         await this.waitForProjection(position)
@@ -105,7 +105,7 @@ export class Api {
         if (state.courseTitle === newTitle) throw new Error("New title is the same as the current title.")
 
         const position = await this.eventStore.append({
-            events: new CourseTitleWasChangedEvent({ courseId, newTitle }),
+            events: courseTitleWasChanged({ courseId, newTitle }),
             condition: appendCondition
         })
         await this.waitForProjection(position)
@@ -130,7 +130,7 @@ export class Api {
             throw new Error(`Student ${studentId} is already subscribed to the maximum number of courses`)
 
         const position = await this.eventStore.append({
-            events: new StudentWasSubscribedEvent({ courseId, studentId }),
+            events: studentWasSubscribed({ courseId, studentId }),
             condition: appendCondition
         })
         await this.waitForProjection(position)
@@ -149,7 +149,7 @@ export class Api {
             throw new Error(`Student ${studentId} is not subscribed to course ${courseId}.`)
 
         const position = await this.eventStore.append({
-            events: new StudentWasUnsubscribedEvent({ courseId, studentId }),
+            events: studentWasUnsubscribed({ courseId, studentId }),
             condition: appendCondition
         })
         await this.waitForProjection(position)

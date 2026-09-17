@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { DcbEvent, EventHandler, EventStore, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { Event, EventHandler, EventStore, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { Projection } from "./projection.js"
 import { setProjectionStatus } from "./registry/projectionRegistry.js"
 import { acquireExclusiveProjectionLock } from "./projectionLock.js"
@@ -83,7 +83,7 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
             {
                 processorName: name,
                 query: projection.canHandle,
-                handlerFactory: (txClient: PoolClient): EventHandler<DcbEvent, Tags> => ({
+                handlerFactory: (txClient: PoolClient): EventHandler<Event, Tags> => ({
                     when: Object.fromEntries(
                         eventTypes.map(type => [
                             type,
@@ -91,7 +91,7 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
                                 await projection.handle([event], { client: txClient })
                             }
                         ])
-                    ) as EventHandler<DcbEvent, Tags>["when"]
+                    ) as EventHandler<Event, Tags>["when"]
                 }),
                 startFrom: "BEGINNING" as const,
                 batchSize: options.batchSize,

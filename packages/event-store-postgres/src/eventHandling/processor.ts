@@ -166,8 +166,9 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                 await client.query("BEGIN")
 
                 const handler = handlerFactory(client)
-                if (handler.when[event.event.type]) {
-                    await handler.when[event.event.type](event)
+                const fn = handler.when[event.event.type]
+                if (fn) {
+                    await fn(event)
                 }
 
                 const storeResult = await storeCheckpoint(

@@ -21,18 +21,56 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   via `runHandler`.
 - **SequencePosition** — global ordering of events; the basis for conditions,
   bookmarks and read barriers.
+- **Event type architecture** (Phase 13) — events use a three-layer type
+  system that cleanly separates domain facts from infrastructure concerns:
+  - **`Event<Type, Data, MetaData>`** — pure domain payload. Contains only
+    `type` (literal string), `data` (the business fact), and optionally
+    `metadata`. Domain events are defined as type aliases:
+    `type CourseWasRegistered = Event<"courseWasRegistered", { courseId: string; title: string }>`.
+    No tags, no position, no identity — those are infrastructure.
+  - **`TaggedEvent<E>`** — write envelope: `{ event: E, tags, id?, schemaVersion? }`.
+    Wraps an `Event` with the tags needed for DCB consistency boundaries and
+    optional caller-supplied identity for idempotent appends. This is what
+    `append()` accepts.
+  - **`SequencedEvent<E>`** — read envelope: `{ event: E, tags, position, id, recordedAt, schemaVersion? }`.
+    What `read()` and `subscribe()` yield. Adds the server-assigned sequence
+    position, recorded timestamp, and guaranteed identity.
+  Events are defined as type aliases with companion factory functions (not
+  classes): `export const courseWasRegistered = (data): TaggedEvent<CourseWasRegistered> => ({ event: { type: "courseWasRegistered", data }, tags: Tags.fromObj({ courseId: data.courseId }) })`.
+  Utility types `EventTypeOf<E>`, `EventDataOf<E>`, `EventMetaDataOf<E>`
+  extract parts of an event type for compile-time inference. `AnyEvent`
+  (`Event<any, any, any>`) is the escape hatch for generic/test code.
+  *Benefits:*
+  (a) Domain events are free of infrastructure — `Events.ts` files contain
+  pure type aliases describing business facts; tags and identity are added
+  at the boundary by the factory function.
+  (b) Type-safe discrimination — literal `type` strings enable TypeScript's
+  discriminated union narrowing in `EventHandlerWithState.when` handlers.
+  (c) Clean metadata handling — `Event<Type, Data>` has `metadata?: undefined`
+  (cannot accidentally pass metadata); `Event<Type, Data, Meta>` requires it.
+  The conditional type enforces this at compile time.
+  (d) Symmetry with commands — `Event<Type, Data, MetaData>` mirrors
+  `Command<Type, Data, MetaData>` from Phase 12, creating a consistent pair
+  of domain message types with identical structure and utility types.
+  (e) No class overhead — factory functions eliminate `new`, prototype chains,
+  and `implements` boilerplate. More composable, more tree-shakeable.
+  (f) Three layers enforce the right access pattern — decision model handlers
+  destructure `{ event }` from `SequencedEvent` to access `event.data`,
+  keeping the domain logic unaware of position or identity. Tags live on the
+  envelope where they belong (on the write and read wrappers, not on the
+  domain fact itself).
 - **Event identity** (`message_id`) — every stored event carries a UUID
-  `message_id` (auto-generated or caller-supplied via `DcbEvent.id`). A unique
-  index enforces deduplication: appending events with a previously-seen
+  `message_id` (auto-generated or caller-supplied via `TaggedEvent.id`). A
+  unique index enforces deduplication: appending events with a previously-seen
   `message_id` is a silent no-op (`ON CONFLICT DO NOTHING`), making retries
   safe. `SequencedEvent` exposes `id` and `recordedAt` on the read side.
 - **Event metadata columns** — the event table has four columns added in
   Phase 1 alongside `payload`: `message_id UUID`, `recorded_at TIMESTAMPTZ`,
   `schema_version TEXT` (default `'1'`), `metadata JSONB` (default `{}`).
   Schema migration is idempotent (`ADD COLUMN IF NOT EXISTS`).
-- **DcbCommand** — typed command interface mirroring `DcbEvent` but without
-  tags: `DcbCommand<Type, Data>`. Commands are plain type aliases and object
-  literals, not classes.
+- **Command type** — `Command<Type, Data, MetaData>` mirrors the `Event`
+  type structure. Commands are plain type aliases and object literals, not
+  classes.
   *Note:* As of Phase 12, we adopted Emmett's object outlining for commands (`Command` type structure from `../emmett/src/packages/emmett/src/typing/command.ts`).
   *Benefits:* Provides standardization, improved type-safe inference via utility types (`CommandTypeOf`, `CommandDataOf`, `CommandMetaDataOf`), and a factory builder (`command()`) for streamlined instantiation.
   *Impact:* Minimal to zero refactoring required downstream because existing object literal assignments remain fully supported, ensuring complete backwards compatibility with existing example slices and test specifications.
@@ -72,7 +110,7 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   avoiding lossy round-tripping through handler `when` keys.
 - **ProjectionSpec** — fluent given/when/then API for testing projections
   against real Postgres with automatic rollback isolation. Fabricates
-  `SequencedEvent` objects from `DcbEvent` inputs, calls `init` and `handle`,
+  `SequencedEvent` objects from `TaggedEvent` inputs, calls `init` and `handle`,
   runs user assertions, then rolls back the transaction so tests are isolated
   without table truncation.
 - **`pongoProjection()`** — factory for Pongo JSONB read models. The handler
@@ -265,8 +303,6 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 7. **Poolers.** Advisory locks require session-mode connections. Do not add
    code paths that assume a transaction-mode pooler (PgBouncer, Supavisor,
    RDS Proxy) unless using `rowLocks()`.
-8. **Do not touch `packages/event-store-bench` scenarios** except to add new
-   ones. Existing scenarios are the regression baseline.
 
 ## Branching rules — mandatory
 

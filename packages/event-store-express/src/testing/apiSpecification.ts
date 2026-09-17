@@ -2,7 +2,7 @@ import supertest from "supertest"
 import type { Response, Test } from "supertest"
 import type { Agent as TestAgent } from "supertest"
 import type { ErrorToProblemDetailsMapping, ProblemDetails } from "@dcb-es/event-store-web"
-import type { DcbEvent, EventStore, SequencedEvent } from "@dcb-es/event-store"
+import type { TaggedEvent, EventStore, SequencedEvent } from "@dcb-es/event-store"
 import { MemoryEventStore, Query, streamAllEventsToArray, assertNewEvents, assertMatches } from "@dcb-es/event-store"
 import { getApplication, type WebApiSetup } from "../application.js"
 
@@ -22,7 +22,7 @@ export class ApiSpecification {
         return new ApiSpecification(options)
     }
 
-    existingEvents(...events: DcbEvent[]): GivenStage {
+    existingEvents(...events: TaggedEvent[]): GivenStage {
         return new GivenStage(this.options, events)
     }
 
@@ -34,7 +34,7 @@ export class ApiSpecification {
 class GivenStage {
     constructor(
         private readonly options: ApiSpecificationOptions,
-        private readonly givenEvents: DcbEvent[]
+        private readonly givenEvents: TaggedEvent[]
     ) {}
 
     when(request: TestRequest): WhenStage {
@@ -50,7 +50,7 @@ class WhenStage {
 
     constructor(
         private readonly options: ApiSpecificationOptions,
-        private readonly givenEvents: DcbEvent[],
+        private readonly givenEvents: TaggedEvent[],
         private readonly request: TestRequest
     ) {
         this.resultPromise = this.execute()
@@ -79,7 +79,7 @@ class WhenStage {
         return { response, newEvents }
     }
 
-    async then(responseAssert: ResponseAssert, ...expectedEvents: DcbEvent[]): Promise<void> {
+    async then(responseAssert: ResponseAssert, ...expectedEvents: TaggedEvent[]): Promise<void> {
         const { response, newEvents } = await this.resultPromise
         responseAssert(response)
         if (expectedEvents.length > 0) {
@@ -87,7 +87,7 @@ class WhenStage {
         }
     }
 
-    async thenEvents(...expectedEvents: DcbEvent[]): Promise<void> {
+    async thenEvents(...expectedEvents: TaggedEvent[]): Promise<void> {
         const { newEvents } = await this.resultPromise
         assertNewEvents(newEvents, expectedEvents)
     }

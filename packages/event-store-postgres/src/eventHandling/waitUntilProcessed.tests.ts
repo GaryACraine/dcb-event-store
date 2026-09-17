@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { DcbEvent, SequencePosition, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, SequencePosition, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { runHandler } from "./runHandler.js"
 import { waitUntilProcessed } from "./waitUntilProcessed.js"
@@ -7,11 +7,9 @@ import { WaitTimeoutError } from "./WaitTimeoutError.js"
 import { ensureHandlersInstalled } from "./ensureHandlersInstalled.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string): DcbEvent => ({
-    type,
-    tags: Tags.fromObj({ e: "1" }),
-    data: {},
-    metadata: {}
+const event = (type: string): TaggedEvent<AnyEvent> => ({
+    event: { type, data: {} } as AnyEvent,
+    tags: Tags.fromObj({ e: "1" })
 })
 
 const HANDLER = "TestHandler"

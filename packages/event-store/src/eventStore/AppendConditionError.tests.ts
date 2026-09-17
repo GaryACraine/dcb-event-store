@@ -45,7 +45,7 @@ describe("AppendConditionError", () => {
     test("should expose after from the appendCondition", () => {
         const condition = createAppendCondition("5")
         const error = new AppendConditionError(condition)
-        expect(error.appendCondition.after.toString()).toBe("5")
+        expect(error.appendCondition?.after?.toString()).toBe("5")
     })
 
     test("should have a stack trace", () => {
@@ -69,7 +69,7 @@ describe("AppendConditionError", () => {
             if (error instanceof AppendConditionError) {
                 expect(error.appendCondition).toBeDefined()
             } else {
-                fail("Expected error to be an instance of AppendConditionError")
+                expect.fail("Expected error to be an instance of AppendConditionError")
             }
         }
     })
@@ -106,6 +106,6 @@ describe("AppendConditionError", () => {
         }
         const error = new AppendConditionError(condition)
         expect(error.appendCondition.failIfEventsMatch.isAll).toBe(true)
-        expect(error.appendCondition.after.toString()).toBe("10")
+        expect(error.appendCondition?.after?.toString()).toBe("10")
     })
 })

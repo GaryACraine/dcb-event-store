@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import http from "node:http"
 import express from "express"
 import { MemoryEventStore, Query, Tags } from "@dcb-es/event-store"
-import type { DcbEvent } from "@dcb-es/event-store"
+import type { AnyEvent, TaggedEvent } from "@dcb-es/event-store"
 import { sseEventFeed } from "./sse.js"
 
 // Helper: collect SSE messages from a Node HTTP request
@@ -100,21 +100,17 @@ function collectHeartbeats(server: http.Server, path: string, opts: { timeoutMs?
     })
 }
 
-function makeCourseEvent(courseId: string): DcbEvent {
+function makeCourseEvent(courseId: string): TaggedEvent<AnyEvent> {
     return {
-        type: "courseWasRegistered",
-        tags: Tags.fromObj({ courseId }),
-        data: { courseId, title: "Math", capacity: 30 },
-        metadata: {}
+        event: { type: "courseWasRegistered", data: { courseId, title: "Math", capacity: 30 } } as AnyEvent,
+        tags: Tags.fromObj({ courseId })
     }
 }
 
-function makeStudentEvent(studentId: string): DcbEvent {
+function makeStudentEvent(studentId: string): TaggedEvent<AnyEvent> {
     return {
-        type: "studentWasRegistered",
-        tags: Tags.fromObj({ studentId }),
-        data: { studentId, name: "Alice" },
-        metadata: {}
+        event: { type: "studentWasRegistered", data: { studentId, name: "Alice" } } as AnyEvent,
+        tags: Tags.fromObj({ studentId })
     }
 }
 

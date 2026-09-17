@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { DcbEvent, AppendCondition, Query } from "@dcb-es/event-store"
+import { TaggedEvent, AppendCondition, Query } from "@dcb-es/event-store"
 import { computeWriterLockKeys, computeReaderLockKeys, WriterLockKeys, ReaderLockKeys } from "./advisoryLocks.js"
 
 /**
@@ -16,7 +16,7 @@ import { computeWriterLockKeys, computeReaderLockKeys, WriterLockKeys, ReaderLoc
  * filters, then snapshot the high-water mark and release.
  */
 export interface LockStrategy {
-    computeWriterKeys(events: DcbEvent[], condition?: AppendCondition): WriterLockKeys
+    computeWriterKeys(events: TaggedEvent[], condition?: AppendCondition): WriterLockKeys
     computeReaderKeys(query: Query): ReaderLockKeys
     /** Writer-side acquisition: leaf X + intent S, all in sorted order. */
     acquireWriter(client: PoolClient, keys: WriterLockKeys, tableName: string): Promise<void>

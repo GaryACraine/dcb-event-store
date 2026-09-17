@@ -1,17 +1,17 @@
-import type { DcbEvent, SequencedEvent } from "../eventStore/EventStore.js"
+import type { TaggedEvent, SequencedEvent } from "../eventStore/EventStore.js"
 import { Tags } from "../eventStore/Tags.js"
 
-export function normalizeForComparison(event: DcbEvent): {
+export function normalizeForComparison(evt: TaggedEvent): {
     type: string
     tags: string[]
     data: unknown
     metadata: unknown
 } {
     return {
-        type: event.type,
-        tags: event.tags instanceof Tags ? event.tags.values : [],
-        data: event.data,
-        metadata: event.metadata
+        type: evt.event.type,
+        tags: evt.tags instanceof Tags ? evt.tags.values : [],
+        data: evt.event.data,
+        metadata: evt.event.metadata
     }
 }
 
@@ -70,8 +70,8 @@ export function assertMatches(actual: unknown, expected: unknown): void {
     }
 }
 
-export function assertNewEvents(actual: SequencedEvent[], expected: DcbEvent[]): void {
-    const actualNormalized = actual.map(se => normalizeForComparison(se.event))
+export function assertNewEvents(actual: SequencedEvent[], expected: TaggedEvent[]): void {
+    const actualNormalized = actual.map(se => normalizeForComparison(se as unknown as TaggedEvent))
     const expectedNormalized = expected.map(normalizeForComparison)
 
     if (actualNormalized.length !== expectedNormalized.length) {

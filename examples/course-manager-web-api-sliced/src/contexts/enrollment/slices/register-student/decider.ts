@@ -1,5 +1,5 @@
 import { decider, IllegalStateError } from "@dcb-es/event-store"
-import { StudentWasRegistered } from "../../Events.js"
+import { studentWasRegistered } from "../../Events.js"
 import { StudentAlreadyRegistered, NextStudentNumber } from "./decisionModels.js"
 import type { RegisterStudent } from "./command.js"
 
@@ -18,7 +18,7 @@ export const registerStudent = decider<
         if (state.studentAlreadyRegistered)
             throw new IllegalStateError(`Student with id ${cmd.data.id} already registered.`)
 
-        return new StudentWasRegistered({
+        return studentWasRegistered({
             studentId: cmd.data.id,
             name: cmd.data.name,
             studentNumber: state.nextStudentNumber

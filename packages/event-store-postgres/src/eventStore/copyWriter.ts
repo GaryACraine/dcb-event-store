@@ -2,7 +2,7 @@ import { PoolClient } from "pg"
 import { from as copyFrom } from "pg-copy-streams"
 import { pipeline } from "stream/promises"
 import { Readable } from "stream"
-import { DcbEvent } from "@dcb-es/event-store"
+import { TaggedEvent } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
 
 export interface ConditionRow {
@@ -21,7 +21,7 @@ export interface ConditionRow {
 export async function copyEventsToTable(
     client: PoolClient,
     tableName: string,
-    events: Iterable<DcbEvent>
+    events: Iterable<TaggedEvent>
 ): Promise<void> {
     const copyStream = client.query(
         copyFrom(
@@ -36,8 +36,8 @@ export async function copyEventsToTable(
                 const payload = escapeCopy(serializePayload(evt))
                 const messageId = evt.id ?? uuid()
                 const schemaVersion = escapeCopy(evt.schemaVersion ?? "1")
-                const metadata = escapeCopy(JSON.stringify(evt.metadata ?? {}))
-                yield `${escapeCopy(evt.type)}\t${tags}\t${payload}\t${messageId}\t${schemaVersion}\t${metadata}\n`
+                const metadata = escapeCopy(JSON.stringify(evt.event.metadata ?? {}))
+                yield `${escapeCopy(evt.event.type)}\t${tags}\t${payload}\t${messageId}\t${schemaVersion}\t${metadata}\n`
             }
         })()
     )
@@ -45,8 +45,8 @@ export async function copyEventsToTable(
     await pipeline(source, copyStream)
 }
 
-function serializePayload(evt: DcbEvent): string {
-    return `{"data":${JSON.stringify(evt.data)},"metadata":${JSON.stringify(evt.metadata)}}`
+function serializePayload(evt: TaggedEvent): string {
+    return JSON.stringify({ data: evt.event.data, metadata: evt.event.metadata })
 }
 
 function formatTagsForCopy(tags: string[]): string {

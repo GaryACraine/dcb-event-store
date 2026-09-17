@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool } from "pg"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
-import { Query, Tags, DcbEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
+import { Query, Tags, AnyEvent, TaggedEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
 import { pongoProjection, PongoProjectionContext } from "./pongoProjection.js"
 import { pongoDocumentProjection } from "./pongoDocumentProjection.js"
@@ -23,53 +23,34 @@ interface StudentDoc {
     subscribedCourses: string[]
 }
 
-class CourseWasRegisteredEvent implements DcbEvent {
-    type: "courseWasRegistered" = "courseWasRegistered"
-    tags: Tags
-    data: { courseId: string; title: string; capacity: number }
-    metadata: unknown = {}
-    constructor(data: { courseId: string; title: string; capacity: number }) {
-        this.tags = Tags.fromObj({ courseId: data.courseId })
-        this.data = data
-    }
-}
+const courseWasRegistered = (data: { courseId: string; title: string; capacity: number }): TaggedEvent<AnyEvent> => ({
+    event: { type: "courseWasRegistered", data } as AnyEvent,
+    tags: Tags.fromObj({ courseId: data.courseId })
+})
 
-class StudentWasRegisteredEvent implements DcbEvent {
-    type: "studentWasRegistered" = "studentWasRegistered"
-    tags: Tags
-    data: { studentId: string; name: string; studentNumber: number }
-    metadata: unknown = {}
-    constructor(data: { studentId: string; name: string; studentNumber: number }) {
-        this.tags = Tags.fromObj({ studentId: data.studentId })
-        this.data = data
-    }
-}
+const studentWasRegistered = (data: {
+    studentId: string
+    name: string
+    studentNumber: number
+}): TaggedEvent<AnyEvent> => ({
+    event: { type: "studentWasRegistered", data } as AnyEvent,
+    tags: Tags.fromObj({ studentId: data.studentId })
+})
 
-class StudentWasSubscribedEvent implements DcbEvent {
-    type: "studentWasSubscribed" = "studentWasSubscribed"
-    tags: Tags
-    data: { courseId: string; studentId: string }
-    metadata: unknown = {}
-    constructor(data: { courseId: string; studentId: string }) {
-        this.tags = Tags.fromObj({ courseId: data.courseId, studentId: data.studentId })
-        this.data = data
-    }
-}
+const studentWasSubscribed = (data: { courseId: string; studentId: string }): TaggedEvent<AnyEvent> => ({
+    event: { type: "studentWasSubscribed", data } as AnyEvent,
+    tags: Tags.fromObj({ courseId: data.courseId, studentId: data.studentId })
+})
 
-class StudentWasUnsubscribedEvent implements DcbEvent {
-    type: "studentWasUnsubscribed" = "studentWasUnsubscribed"
-    tags: Tags
-    data: { courseId: string; studentId: string }
-    metadata: unknown = {}
-    constructor(data: { courseId: string; studentId: string }) {
-        this.tags = Tags.fromObj({ courseId: data.courseId, studentId: data.studentId })
-        this.data = data
-    }
-}
+const studentWasUnsubscribed = (data: { courseId: string; studentId: string }): TaggedEvent<AnyEvent> => ({
+    event: { type: "studentWasUnsubscribed", data } as AnyEvent,
+    tags: Tags.fromObj({ courseId: data.courseId, studentId: data.studentId })
+})
 
-function toSequencedEvent(event: DcbEvent, position: number): SequencedEvent {
+function toSequencedEvent(tagged: TaggedEvent<AnyEvent>, position: number): SequencedEvent {
     return {
-        event,
+        event: tagged.event,
+        tags: tagged.tags,
         position: SequencePosition.fromString(String(position)),
         id: uuid(),
         recordedAt: new Date()
@@ -165,10 +146,7 @@ describe("pongoProjection", () => {
             await courseProjection.init!(client)
 
             // Handle an event within the transaction
-            const event = toSequencedEvent(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                1
-            )
+            const event = toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1)
             await courseProjection.handle([event], { client })
 
             // Verify it's visible within the transaction
@@ -228,12 +206,9 @@ describe("pongoProjection", () => {
             await courseProjection.init!(client)
 
             const events = [
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
-                toSequencedEvent(
-                    new StudentWasRegisteredEvent({ studentId: "s1", name: "Alice", studentNumber: 1 }),
-                    2
-                ),
-                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }), 3)
+                toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1),
+                toSequencedEvent(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }), 2),
+                toSequencedEvent(studentWasSubscribed({ courseId: "c1", studentId: "s1" }), 3)
             ]
 
             await courseProjection.handle(events, { client })
@@ -313,8 +288,8 @@ describe("pongoDocumentProjection", () => {
             await courseDocProjection.init!(client)
 
             const events = [
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c2", title: "Science", capacity: 25 }), 2)
+                toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1),
+                toSequencedEvent(courseWasRegistered({ courseId: "c2", title: "Science", capacity: 25 }), 2)
             ]
 
             await courseDocProjection.handle(events, { client })
@@ -340,10 +315,10 @@ describe("pongoDocumentProjection", () => {
             await courseDocProjection.init!(client)
 
             const events = [
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1),
-                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }), 2),
-                toSequencedEvent(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s2" }), 3),
-                toSequencedEvent(new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }), 4)
+                toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1),
+                toSequencedEvent(studentWasSubscribed({ courseId: "c1", studentId: "s1" }), 2),
+                toSequencedEvent(studentWasSubscribed({ courseId: "c1", studentId: "s2" }), 3),
+                toSequencedEvent(studentWasUnsubscribed({ courseId: "c1", studentId: "s1" }), 4)
             ]
 
             await courseDocProjection.handle(events, { client })
@@ -373,9 +348,7 @@ describe("pongoDocumentProjection", () => {
             await client.query("BEGIN")
             await projection.init!(client)
 
-            const events = [
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1)
-            ]
+            const events = [toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1)]
 
             await projection.handle(events, { client })
 
@@ -394,9 +367,7 @@ describe("pongoDocumentProjection", () => {
             await client.query("BEGIN")
             await courseDocProjection.init!(client)
 
-            const events = [
-                toSequencedEvent(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }), 1)
-            ]
+            const events = [toSequencedEvent(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }), 1)]
             await courseDocProjection.handle(events, { client })
 
             // Visible within transaction
@@ -432,7 +403,7 @@ describe("ProjectionSpec with pongoProjection", () => {
     test("given/when/then works with pongoProjection", async () => {
         await ProjectionSpec.for({ projection: courseProjection, pool })
             .given([])
-            .when([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .when([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM courses WHERE _id = 'c1'")
                 expect(result.rows).toHaveLength(1)
@@ -443,10 +414,10 @@ describe("ProjectionSpec with pongoProjection", () => {
     test("given events are applied before when events", async () => {
         await ProjectionSpec.for({ projection: courseProjection, pool })
             .given([
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasRegisteredEvent({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             ])
-            .when([new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })])
+            .when([studentWasSubscribed({ courseId: "c1", studentId: "s1" })])
             .then(async client => {
                 const courseResult = await client.query("SELECT data FROM courses WHERE _id = 'c1'")
                 expect(courseResult.rows[0].data.subscribedStudents).toEqual(["s1"])
@@ -458,7 +429,7 @@ describe("ProjectionSpec with pongoProjection", () => {
 
     test("changes are rolled back after assertion", async () => {
         await ProjectionSpec.for({ projection: courseProjection, pool })
-            .given([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .given([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .when([])
             .then(async client => {
                 const result = await client.query("SELECT count(*) as cnt FROM courses")
@@ -506,8 +477,8 @@ describe("ProjectionSpec with pongoProjection", () => {
         })
 
         await ProjectionSpec.for({ projection: courseDocProjection, pool })
-            .given([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
-            .when([new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })])
+            .given([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
+            .when([studentWasSubscribed({ courseId: "c1", studentId: "s1" })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM spec_course_docs WHERE _id = 'c1'")
                 expect(result.rows).toHaveLength(1)
@@ -545,7 +516,7 @@ describe("ProjectionSpec with pongoProjection", () => {
         // This test verifies the canHandle query structure is correct.
         await ProjectionSpec.for({ projection: taggedProjection, pool })
             .given([])
-            .when([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .when([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM tagged_courses WHERE _id = 'c1'")
                 expect(result.rows).toHaveLength(1)

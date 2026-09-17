@@ -2,9 +2,9 @@
 "@dcb-es/event-store": minor
 ---
 
-Add Decider type, DcbCommand, typed domain errors, and DeciderSpecification
+Add Decider type, Command, typed domain errors, and DeciderSpecification
 
-- `DcbCommand<Type, Data>` — typed command interface mirroring DcbEvent
+- `Command<Type, Data>` — typed command interface mirroring DcbEvent
 - `Decider` interface and `decider()` factory for formalised command handling
 - `handle(store, decider, command)` — orchestrates buildDecisionModel, decide, and append
 - `DcbError` base class with `NotFoundError` (404), `ValidationError` (400), `IllegalStateError` (422)

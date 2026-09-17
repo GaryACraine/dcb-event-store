@@ -1,19 +1,18 @@
 import { MemoryEventStore } from "./MemoryEventStore.js"
-import { AppendCondition, DcbEvent } from "../EventStore.js"
+import { AppendCondition, TaggedEvent } from "../EventStore.js"
+import { AnyEvent, Event } from "../Event.js"
 import { AppendConditionError } from "../AppendConditionError.js"
 import { SequencePosition } from "../SequencePosition.js"
 import { streamAllEventsToArray } from "../streamAllEventsToArray.js"
 import { Tags } from "../Tags.js"
 import { Query } from "../Query.js"
-class EventType1 implements DcbEvent {
-    type: "testEvent1" = "testEvent1"
+
+class EventType1 implements TaggedEvent<Event<"testEvent1", Record<string, never>>> {
+    event: Event<"testEvent1", Record<string, never>> = { type: "testEvent1", data: {}, kind: "Event" }
     tags: Tags
-    data: Record<string, never>
-    metadata: Record<string, never> = {}
 
     constructor(tagValue?: string) {
         this.tags = Tags.fromObj({ testTagKey: tagValue ?? "default" })
-        this.data = {}
     }
 }
 
@@ -106,7 +105,7 @@ describe("memoryEventStore.append", () => {
             test("should include the appendCondition in the thrown error", async () => {
                 try {
                     await eventStore.append({ events: new EventType1(), condition })
-                    fail("Expected AppendConditionError to be thrown")
+                    expect.fail("Expected AppendConditionError to be thrown")
                 } catch (error) {
                     expect(error).toBeInstanceOf(AppendConditionError)
                     const appendError = error as AppendConditionError
@@ -119,7 +118,7 @@ describe("memoryEventStore.append", () => {
             test("should have the correct error name", async () => {
                 try {
                     await eventStore.append({ events: new EventType1(), condition })
-                    fail("Expected AppendConditionError to be thrown")
+                    expect.fail("Expected AppendConditionError to be thrown")
                 } catch (error) {
                     expect(error).toBeInstanceOf(AppendConditionError)
                     expect((error as AppendConditionError).name).toBe("AppendConditionError")
@@ -129,7 +128,7 @@ describe("memoryEventStore.append", () => {
             test("should be catchable as an Error", async () => {
                 try {
                     await eventStore.append({ events: new EventType1(), condition })
-                    fail("Expected AppendConditionError to be thrown")
+                    expect.fail("Expected AppendConditionError to be thrown")
                 } catch (error) {
                     expect(error).toBeInstanceOf(Error)
                     expect(error).toBeInstanceOf(AppendConditionError)
@@ -281,7 +280,7 @@ describe("memoryEventStore.append", () => {
                         }
                     }
                 ])
-                fail("Expected AppendConditionError")
+                expect.fail("Expected AppendConditionError")
             } catch (error) {
                 expect(error).toBeInstanceOf(AppendConditionError)
                 expect((error as AppendConditionError).commandIndex).toBe(1)
@@ -321,11 +320,83 @@ describe("memoryEventStore.append", () => {
                         after: SequencePosition.fromString("0")
                     }
                 })
-                fail("Expected AppendConditionError")
+                expect.fail("Expected AppendConditionError")
             } catch (error) {
                 expect(error).toBeInstanceOf(AppendConditionError)
                 expect((error as AppendConditionError).commandIndex).toBeUndefined()
             }
         })
+    })
+})
+
+describe("SequencedEvent property completeness — MemoryEventStore", () => {
+    let eventStore: MemoryEventStore
+
+    beforeEach(() => {
+        eventStore = new MemoryEventStore()
+    })
+
+    const te = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): TaggedEvent<Event> => ({
+        event: { type, data: {} } as Event,
+        tags
+    })
+
+    test("event.type and event.data match input", async () => {
+        await eventStore.append({
+            events: { event: { type: "myEvent", data: { value: 42 } } as Event, tags: Tags.fromObj({ e: "1" }) }
+        })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.event.type).toBe("myEvent")
+        expect(se.event.data).toEqual({ value: 42 })
+    })
+
+    test("event.metadata propagates when provided", async () => {
+        await eventStore.append({
+            events: {
+                event: { type: "myEvent", data: {}, metadata: { correlationId: "abc" } } as AnyEvent,
+                tags: Tags.fromObj({ e: "1" })
+            }
+        })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.event.metadata).toEqual({ correlationId: "abc" })
+    })
+
+    test("tags is on the SequencedEvent envelope, not inside event", async () => {
+        const tags = Tags.fromObj({ courseId: "c1" })
+        await eventStore.append({ events: { event: { type: "myEvent", data: {} } as Event, tags } })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.tags.equals(tags)).toBe(true)
+    })
+
+    test("id is a non-empty string when not provided", async () => {
+        await eventStore.append({ events: te("myEvent") })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(typeof se.id).toBe("string")
+        expect(se.id.length).toBeGreaterThan(0)
+    })
+
+    test("id is preserved when provided", async () => {
+        const id = "00000000-0000-0000-0000-000000000001"
+        await eventStore.append({ events: { ...te("myEvent"), id } })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.id).toBe(id)
+    })
+
+    test("recordedAt is a Date instance", async () => {
+        await eventStore.append({ events: te("myEvent") })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.recordedAt).toBeInstanceOf(Date)
+    })
+
+    test("schemaVersion defaults to '1' when not provided", async () => {
+        await eventStore.append({ events: te("myEvent") })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.schemaVersion).toBe("1")
+    })
+
+    test("schemaVersion is preserved when provided", async () => {
+        await eventStore.append({ events: { ...te("myEvent"), schemaVersion: "3" } })
+        const [se] = await streamAllEventsToArray(eventStore.read(Query.all()))
+        expect(se.schemaVersion).toBe("3")
     })
 })

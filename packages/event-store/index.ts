@@ -1,6 +1,6 @@
 export {
     EventStore,
-    DcbEvent,
+    TaggedEvent,
     SequencedEvent,
     AppendCondition,
     AppendCommand,
@@ -8,9 +8,10 @@ export {
     SubscribeOptions,
     validateAppendCondition
 } from "./src/eventStore/EventStore.js"
+export { Event, AnyEvent, EventTypeOf, EventDataOf, EventMetaDataOf, event } from "./src/eventStore/Event.js"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError.js"
 export {
-    DcbCommand,
+    Command,
     AnyCommand,
     CommandTypeOf,
     CommandDataOf,
@@ -18,7 +19,8 @@ export {
     DefaultCommandMetadata,
     CreateCommandType,
     command
-} from "./src/eventStore/DcbCommand.js"
+} from "./src/eventStore/Command.js"
+export { DefaultRecord } from "./src/eventStore/types.js"
 export { DcbError, NotFoundError, ValidationError, IllegalStateError } from "./src/eventStore/errors.js"
 
 export { Query, QueryItem } from "./src/eventStore/Query.js"

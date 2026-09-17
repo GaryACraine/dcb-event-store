@@ -36,9 +36,9 @@ export async function buildDecisionModel<T extends EventHandlers>(
         for (const [handlerId, eventHandler] of Object.entries(eventHandlers)) {
             const handlerIsRelevant =
                 eventHandler.when[event.type] &&
-                matchTags({ tags: event.tags, tagFilter: eventHandler.tagFilter as Tags })
+                matchTags({ tags: sequencedEvent.tags, tagFilter: eventHandler.tagFilter as Tags })
 
-            const handler = handlerIsRelevant ? eventHandler.when[event.type] : defaultHandler
+            const handler = handlerIsRelevant ? eventHandler.when[event.type]! : defaultHandler
             states[handlerId] = await handler(sequencedEvent, states[handlerId] as EventHandlerStates<T>)
         }
         if (position.isAfter(after)) after = position

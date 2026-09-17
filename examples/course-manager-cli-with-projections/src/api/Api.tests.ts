@@ -14,7 +14,7 @@ import {
     type RunningConsumer
 } from "@dcb-es/event-store-postgres"
 import { courseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection.js"
-import { CourseWasRegisteredEvent, StudentWasRegistered, StudentWasSubscribedEvent } from "./Events.js"
+import { courseWasRegistered, studentWasRegistered, studentWasSubscribed } from "./Events.js"
 
 const COURSE_1 = {
     id: "course-1",
@@ -174,7 +174,7 @@ describe("ProjectionSpec for courseSubscriptionsProjection", () => {
     test("course registration is projected", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([])
-            .when([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .when([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .then(async client => {
                 const result = await client.query("SELECT id, title, capacity FROM courses WHERE id = 'c1'")
                 expect(result.rows[0]).toEqual({ id: "c1", title: "Math", capacity: 30 })
@@ -184,7 +184,7 @@ describe("ProjectionSpec for courseSubscriptionsProjection", () => {
     test("student registration is projected", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([])
-            .when([new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })])
+            .when([studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })])
             .then(async client => {
                 const result = await client.query("SELECT id, name, student_number FROM students WHERE id = 's1'")
                 expect(result.rows[0]).toEqual({ id: "s1", name: "Alice", student_number: 1 })
@@ -194,10 +194,10 @@ describe("ProjectionSpec for courseSubscriptionsProjection", () => {
     test("subscription links student to course", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             ])
-            .when([new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })])
+            .when([studentWasSubscribed({ courseId: "c1", studentId: "s1" })])
             .then(async client => {
                 const result = await client.query(
                     "SELECT course_id, student_id FROM subscriptions WHERE course_id = 'c1' AND student_id = 's1'"
@@ -208,7 +208,7 @@ describe("ProjectionSpec for courseSubscriptionsProjection", () => {
 
     test("changes are rolled back after assertion", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
-            .given([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .given([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .when([])
             .then(async client => {
                 const result = await client.query("SELECT count(*) as cnt FROM courses")

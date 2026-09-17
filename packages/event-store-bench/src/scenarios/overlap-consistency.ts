@@ -1,4 +1,4 @@
-import { EventStore, Tags, Query, DcbEvent, streamAllEventsToArray } from "@dcb-es/event-store"
+import { EventStore, Tags, Query, TaggedEvent, streamAllEventsToArray } from "@dcb-es/event-store"
 import { EventStoreFactory } from "../harness/types"
 import { buildScenarioResult } from "../harness/stats"
 import { entityOracleWorker, spawnWorkers } from "../harness/workers"
@@ -15,13 +15,11 @@ function conditionQuery(entityIndex: number): Query {
     return Query.fromItems([{ types: ["EntityRegistered"], tags: Tags.fromObj({ entity: `E${padded}` }) }])
 }
 
-function entityEvents(workerId: number, entityIndex: number): DcbEvent[] {
+function entityEvents(workerId: number, entityIndex: number): TaggedEvent[] {
     const padded = String(entityIndex).padStart(3, "0")
     return [{
-        type: "EntityRegistered",
+        event: { type: "EntityRegistered", data: { workerId, entityIndex, ts: Date.now() } },
         tags: Tags.fromObj({ entity: `E${padded}`, worker: `W${workerId}` }),
-        data: { workerId, entityIndex, ts: Date.now() },
-        metadata: {},
     }]
 }
 

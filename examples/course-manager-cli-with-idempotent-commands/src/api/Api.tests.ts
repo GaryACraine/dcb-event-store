@@ -43,10 +43,8 @@ describe("EventSourcedApi with idempotent commands", () => {
             // To demonstrate pure store-level idempotency, we use the store directly.
             const pos = await eventStore.append({
                 events: {
-                    type: "courseWasRegistered",
+                    event: { type: "courseWasRegistered", data: { courseId: "idem-1", title: "T", capacity: 1 } },
                     tags: (await import("@dcb-es/event-store")).Tags.fromObj({ courseId: "idem-1" }),
-                    data: { courseId: "idem-1", title: "T", capacity: 1 },
-                    metadata: {},
                     id: key
                 }
             })

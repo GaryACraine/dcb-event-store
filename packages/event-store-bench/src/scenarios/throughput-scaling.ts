@@ -1,4 +1,4 @@
-import { Tags, Query, DcbEvent } from "@dcb-es/event-store"
+import { Tags, Query, TaggedEvent } from "@dcb-es/event-store"
 import { EventStoreFactory, ScenarioResult } from "../harness/types"
 import { buildScenarioResult } from "../harness/stats"
 import { conditionalRetryWorker, spawnWorkers } from "../harness/workers"
@@ -8,12 +8,10 @@ interface Config {
     tiers: Array<{ workers: number; durationMs: number }>
 }
 
-function events(workerId: number): DcbEvent[] {
+function events(workerId: number): TaggedEvent[] {
     return [{
-        type: "EntityCreated",
+        event: { type: "EntityCreated", data: { workerId, ts: Date.now() } },
         tags: Tags.fromObj({ entity: `W${workerId}` }),
-        data: { workerId, ts: Date.now() },
-        metadata: {},
     }]
 }
 

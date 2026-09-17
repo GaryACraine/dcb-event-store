@@ -1,23 +1,16 @@
 import { describe, it } from "vitest"
 import type { EventStore } from "@dcb-es/event-store"
-import { Tags, DcbEvent, IllegalStateError, Query } from "@dcb-es/event-store"
+import { Tags, AnyEvent, Event, TaggedEvent, IllegalStateError, Query } from "@dcb-es/event-store"
 import { on } from "../handler.js"
 import { OK, Created, NoContent } from "../responses.js"
 import type { WebApiSetup } from "../application.js"
 import { ApiE2ESpecification } from "./apiE2ESpecification.js"
 import { expectResponse, expectError } from "./apiSpecification.js"
 
-class ItemCreatedEvent implements DcbEvent {
-    type: "itemCreated" = "itemCreated"
-    tags: Tags
-    data: { id: string; name: string }
-    metadata: unknown = {}
-
-    constructor({ id, name }: { id: string; name: string }) {
-        this.tags = Tags.fromObj({ itemId: id })
-        this.data = { id, name }
-    }
-}
+const makeItemCreated = ({ id, name }: { id: string; name: string }): TaggedEvent<AnyEvent> => ({
+    event: { type: "itemCreated", data: { id, name } } as AnyEvent,
+    tags: Tags.fromObj({ itemId: id })
+})
 
 function configureApi(store: EventStore): WebApiSetup {
     return router => {
@@ -25,14 +18,14 @@ function configureApi(store: EventStore): WebApiSetup {
             "/items",
             on(async req => {
                 const { id, name } = req.body as { id: string; name: string }
-                const events: DcbEvent[] = []
+                const events: Event[] = []
                 for await (const se of store.read(Query.all())) {
                     if (se.event.type === "itemCreated" && (se.event.data as { id: string }).id === id) {
                         events.push(se.event)
                     }
                 }
                 if (events.length > 0) throw new IllegalStateError(`Item ${id} already exists`)
-                await store.append({ events: new ItemCreatedEvent({ id, name }) })
+                await store.append({ events: makeItemCreated({ id, name }) })
                 return Created({ createdId: id })
             })
         )
@@ -41,7 +34,7 @@ function configureApi(store: EventStore): WebApiSetup {
             "/items/:id",
             on(async req => {
                 const { id } = req.params
-                const events: DcbEvent[] = []
+                const events: Event[] = []
                 for await (const se of store.read(Query.all())) {
                     if (se.event.type === "itemCreated" && (se.event.data as { id: string }).id === id) {
                         events.push(se.event)

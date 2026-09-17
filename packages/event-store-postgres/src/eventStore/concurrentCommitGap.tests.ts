@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { DcbEvent, Query, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "./PostgresEventStore.js"
 import { advisoryLocks, rowLocks, LockStrategy } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
@@ -16,11 +16,9 @@ import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const EMPTY_PAYLOAD = '{"data":{},"metadata":{}}'
 
-const buildEvent = (type: string, tag: string): DcbEvent => ({
-    type,
-    tags: Tags.from([tag]),
-    data: {},
-    metadata: {}
+const buildEvent = (type: string, tag: string): TaggedEvent<AnyEvent> => ({
+    event: { type, data: {} },
+    tags: Tags.from([tag])
 })
 
 async function appendHeldOpen(
@@ -66,7 +64,7 @@ describe.each(strategies)("Concurrent commit gap [%s]", (_name, createStrategy) 
         // `INSERT ... ON CONFLICT DO NOTHING` against the same key is fast — without
         // pre-population, the second writer blocks until the first writer's tx
         // completes (Postgres uniqueness check waits on in-flight inserts).
-        const events: DcbEvent[] = [
+        const events: TaggedEvent<AnyEvent>[] = [
             buildEvent("EventA", "scope=X"),
             buildEvent("EventB", "scope=Y"),
             buildEvent("Order", "customer=A"),
@@ -188,7 +186,7 @@ describe.each(strategies)("Concurrent commit gap [%s]", (_name, createStrategy) 
             controller.abort()
             await subPromise
 
-            const tags = seen.flatMap(e => e.event.tags.values)
+            const tags = seen.flatMap(e => e.tags.values)
             expect(tags).toContain("customer=A")
             expect(tags).toContain("customer=B")
             expect(seen.length).toBe(2)

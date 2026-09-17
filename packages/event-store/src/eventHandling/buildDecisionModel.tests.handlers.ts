@@ -1,13 +1,10 @@
+import { Event } from "../eventStore/Event.js"
 import { Tags } from "../eventStore/Tags.js"
 import { EventHandlerWithState } from "./EventHandlerWithState.js"
-import {
-    CourseWasRegisteredEvent,
-    CourseCapacityWasChangedEvent,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent
-} from "./buildDecisionModel.tests.events.js"
 
-export const CourseExists = (courseId: string): EventHandlerWithState<CourseWasRegisteredEvent, boolean> => ({
+export const CourseExists = (
+    courseId: string
+): EventHandlerWithState<Event<"courseWasRegistered", { capacity: number }>, boolean> => ({
     tagFilter: Tags.fromObj({ courseId }),
     init: false,
     when: {
@@ -18,7 +15,10 @@ export const CourseExists = (courseId: string): EventHandlerWithState<CourseWasR
 export const CourseCapacity = (
     courseId: string
 ): EventHandlerWithState<
-    CourseWasRegisteredEvent | CourseCapacityWasChangedEvent | StudentWasSubscribedEvent | StudentWasUnsubscribedEvent,
+    | Event<"courseWasRegistered", { capacity: number }>
+    | Event<"courseCapacityWasChanged", { newCapacity: number }>
+    | Event<"studentWasSubscribed", Record<string, never>>
+    | Event<"studentWasUnsubscribed", Record<string, never>>,
     { isFull: boolean; subscriberCount: number; capacity: number }
 > => ({
     tagFilter: Tags.fromObj({ courseId }),

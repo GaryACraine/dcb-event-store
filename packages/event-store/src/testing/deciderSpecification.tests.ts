@@ -1,7 +1,7 @@
 import { describe, test, expect } from "vitest"
 import { DeciderSpecification } from "./deciderSpecification.js"
 import { decider } from "../eventHandling/Decider.js"
-import { DcbCommand } from "../eventStore/DcbCommand.js"
+import { Command } from "../eventStore/Command.js"
 import { SequencePosition } from "../eventStore/SequencePosition.js"
 import { IllegalStateError, NotFoundError, ValidationError } from "../eventStore/errors.js"
 import { CourseExists, CourseCapacity } from "../eventHandling/buildDecisionModel.tests.handlers.js"
@@ -13,13 +13,13 @@ import {
 
 // -- Typed commands for testing --
 
-type RegisterCourse = DcbCommand<"registerCourse", { id: string; capacity: number }>
-type ChangeCourseCapacity = DcbCommand<"changeCourseCapacity", { courseId: string; newCapacity: number }>
-type SubscribeStudent = DcbCommand<"subscribeStudent", { courseId: string; studentId: string }>
+type RegisterCourse = Command<"registerCourse", { id: string; capacity: number }>
+type ChangeCourseCapacity = Command<"changeCourseCapacity", { courseId: string; newCapacity: number }>
+type SubscribeStudent = Command<"subscribeStudent", { courseId: string; studentId: string }>
 
 // -- Deciders under test --
 
-const registerCourse = decider<RegisterCourse, ReturnType<typeof CourseExists>>({
+const registerCourse = decider<RegisterCourse, { courseExists: ReturnType<typeof CourseExists> }>({
     handlers: cmd => ({
         courseExists: CourseExists(cmd.data.id)
     }),
@@ -62,7 +62,7 @@ const subscribeStudent = decider<
 })
 
 // -- A decider that returns no events --
-const noOpDecider = decider<RegisterCourse, ReturnType<typeof CourseExists>>({
+const noOpDecider = decider<RegisterCourse, { courseExists: ReturnType<typeof CourseExists> }>({
     handlers: cmd => ({
         courseExists: CourseExists(cmd.data.id)
     }),

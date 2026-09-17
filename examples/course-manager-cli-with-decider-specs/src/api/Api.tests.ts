@@ -9,12 +9,12 @@ import {
     unsubscribeStudentFromCourse
 } from "./Deciders.js"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent,
-    CourseTitleWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged,
+    courseTitleWasChanged
 } from "./Events.js"
 
 describe("registerCourse", () => {
@@ -22,12 +22,12 @@ describe("registerCourse", () => {
         await DeciderSpecification.for(registerCourse)
             .given()
             .when({ type: "registerCourse", data: { id: "c1", title: "Math", capacity: 30 } })
-            .then(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .then(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
     })
 
     test("given course already exists, throws IllegalStateError", async () => {
         await DeciderSpecification.for(registerCourse)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "registerCourse", data: { id: "c1", title: "Math", capacity: 30 } })
             .thenThrows(IllegalStateError, e => e.message.includes("already exists"))
     })
@@ -38,19 +38,19 @@ describe("registerStudent", () => {
         await DeciderSpecification.for(registerStudent)
             .given()
             .when({ type: "registerStudent", data: { id: "s1", name: "Alice" } })
-            .then(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .then(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
     })
 
     test("given one student registered, assigns next student number", async () => {
         await DeciderSpecification.for(registerStudent)
-            .given(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .given(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
             .when({ type: "registerStudent", data: { id: "s2", name: "Bob" } })
-            .then(new StudentWasRegistered({ studentId: "s2", name: "Bob", studentNumber: 2 }))
+            .then(studentWasRegistered({ studentId: "s2", name: "Bob", studentNumber: 2 }))
     })
 
     test("given student already registered, throws IllegalStateError", async () => {
         await DeciderSpecification.for(registerStudent)
-            .given(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .given(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
             .when({ type: "registerStudent", data: { id: "s1", name: "Alice" } })
             .thenThrows(IllegalStateError, e => e.message.includes("already registered"))
     })
@@ -59,9 +59,9 @@ describe("registerStudent", () => {
 describe("updateCourseCapacity", () => {
     test("given course exists, updates capacity", async () => {
         await DeciderSpecification.for(updateCourseCapacity)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "updateCourseCapacity", data: { courseId: "c1", newCapacity: 50 } })
-            .then(new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 }))
+            .then(courseCapacityWasChanged({ courseId: "c1", newCapacity: 50 }))
     })
 
     test("given course does not exist, throws NotFoundError", async () => {
@@ -73,7 +73,7 @@ describe("updateCourseCapacity", () => {
 
     test("given same capacity, throws ValidationError", async () => {
         await DeciderSpecification.for(updateCourseCapacity)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "updateCourseCapacity", data: { courseId: "c1", newCapacity: 30 } })
             .thenThrows(ValidationError, e => e.message.includes("same as the current capacity"))
     })
@@ -82,9 +82,9 @@ describe("updateCourseCapacity", () => {
 describe("updateCourseTitle", () => {
     test("given course exists, updates title", async () => {
         await DeciderSpecification.for(updateCourseTitle)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "updateCourseTitle", data: { courseId: "c1", newTitle: "Advanced Math" } })
-            .then(new CourseTitleWasChangedEvent({ courseId: "c1", newTitle: "Advanced Math" }))
+            .then(courseTitleWasChanged({ courseId: "c1", newTitle: "Advanced Math" }))
     })
 
     test("given course does not exist, throws NotFoundError", async () => {
@@ -96,7 +96,7 @@ describe("updateCourseTitle", () => {
 
     test("given same title, throws ValidationError", async () => {
         await DeciderSpecification.for(updateCourseTitle)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "updateCourseTitle", data: { courseId: "c1", newTitle: "Math" } })
             .thenThrows(ValidationError, e => e.message.includes("same as the current title"))
     })
@@ -105,9 +105,9 @@ describe("updateCourseTitle", () => {
 describe("subscribeStudentToCourse", () => {
     test("given course with capacity, subscribes student", async () => {
         await DeciderSpecification.for(subscribeStudentToCourse)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "subscribeStudentToCourse", data: { courseId: "c1", studentId: "s1" } })
-            .then(new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(studentWasSubscribed({ courseId: "c1", studentId: "s1" }))
     })
 
     test("given course does not exist, throws NotFoundError", async () => {
@@ -120,8 +120,8 @@ describe("subscribeStudentToCourse", () => {
     test("given full course, throws IllegalStateError", async () => {
         await DeciderSpecification.for(subscribeStudentToCourse)
             .given(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 1 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 1 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when({ type: "subscribeStudentToCourse", data: { courseId: "c1", studentId: "s2" } })
             .thenThrows(IllegalStateError, e => e.message.includes("is full"))
@@ -130,8 +130,8 @@ describe("subscribeStudentToCourse", () => {
     test("given student already subscribed, throws IllegalStateError", async () => {
         await DeciderSpecification.for(subscribeStudentToCourse)
             .given(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when({ type: "subscribeStudentToCourse", data: { courseId: "c1", studentId: "s1" } })
             .thenThrows(IllegalStateError, e => e.message.includes("already subscribed"))
@@ -139,7 +139,7 @@ describe("subscribeStudentToCourse", () => {
 
     test("thenCondition verifies boundary covers courseId and studentId tags", async () => {
         await DeciderSpecification.for(subscribeStudentToCourse)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "subscribeStudentToCourse", data: { courseId: "c1", studentId: "s1" } })
             .thenCondition(condition => {
                 const query = condition.failIfEventsMatch
@@ -157,11 +157,11 @@ describe("unsubscribeStudentFromCourse", () => {
     test("given student is subscribed, unsubscribes", async () => {
         await DeciderSpecification.for(unsubscribeStudentFromCourse)
             .given(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when({ type: "unsubscribeStudentFromCourse", data: { courseId: "c1", studentId: "s1" } })
-            .then(new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(studentWasUnsubscribed({ courseId: "c1", studentId: "s1" }))
     })
 
     test("given course does not exist, throws NotFoundError", async () => {
@@ -173,7 +173,7 @@ describe("unsubscribeStudentFromCourse", () => {
 
     test("given student is not subscribed, throws NotFoundError", async () => {
         await DeciderSpecification.for(unsubscribeStudentFromCourse)
-            .given(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "unsubscribeStudentFromCourse", data: { courseId: "c1", studentId: "s1" } })
             .thenThrows(NotFoundError, e => e.message.includes("is not subscribed"))
     })

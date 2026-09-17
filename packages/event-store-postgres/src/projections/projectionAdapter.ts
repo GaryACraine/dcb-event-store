@@ -1,5 +1,5 @@
 import { PoolClient } from "pg"
-import { DcbEvent, EventHandler, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { Event, EventHandler, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { ConsumerProcessorConfig } from "../eventHandling/consumer.js"
 import { StartPosition } from "../eventHandling/startPositions.js"
 import { Projection } from "./projection.js"
@@ -22,7 +22,7 @@ export function projectionToProcessor(
     return {
         processorName: projection.name,
         query: projection.canHandle,
-        handlerFactory: (client: PoolClient): EventHandler<DcbEvent, Tags> => ({
+        handlerFactory: (client: PoolClient): EventHandler<Event, Tags> => ({
             when: Object.fromEntries(
                 eventTypes.map(type => [
                     type,
@@ -36,7 +36,7 @@ export function projectionToProcessor(
                         await projection.handle([event], { client })
                     }
                 ])
-            ) as EventHandler<DcbEvent, Tags>["when"]
+            ) as EventHandler<Event, Tags>["when"]
         }),
         pollIntervalMs: options?.pollIntervalMs,
         startFrom: options?.startFrom,

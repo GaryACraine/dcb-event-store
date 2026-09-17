@@ -1,5 +1,5 @@
 import { decider, NotFoundError, ValidationError } from "@dcb-es/event-store"
-import { CourseCapacityWasChangedEvent } from "../../Events.js"
+import { courseCapacityWasChanged } from "../../Events.js"
 import { CourseExists, CourseCapacity } from "./decisionModels.js"
 import type { UpdateCourseCapacity } from "./command.js"
 
@@ -16,7 +16,7 @@ export const updateCourseCapacity = decider<
         if (state.courseCapacity.capacity === cmd.data.newCapacity)
             throw new ValidationError("New capacity is the same as the current capacity.")
 
-        return new CourseCapacityWasChangedEvent({
+        return courseCapacityWasChanged({
             courseId: cmd.data.courseId,
             newCapacity: cmd.data.newCapacity
         })

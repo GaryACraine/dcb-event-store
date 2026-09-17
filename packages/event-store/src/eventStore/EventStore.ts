@@ -1,21 +1,22 @@
 import { Query } from "./Query.js"
 import { SequencePosition } from "./SequencePosition.js"
 import { Tags } from "./Tags.js"
+import { Event } from "./Event.js"
 
-export interface DcbEvent<Tpe extends string = string, Tgs = Tags, Dta = unknown, Mtdta = unknown> {
-    type: Tpe
-    tags: Tgs
-    data: Dta
-    metadata: Mtdta
+export type TaggedEvent<T extends Event = Event> = {
+    event: T
+    tags: Tags
     id?: string
     schemaVersion?: string
 }
 
-export interface SequencedEvent<T extends DcbEvent = DcbEvent> {
+export interface SequencedEvent<T extends Event = Event> {
     event: T
+    tags: Tags
     position: SequencePosition
     id: string
     recordedAt: Date
+    schemaVersion?: string
 }
 
 /**
@@ -54,7 +55,7 @@ export interface ReadOptions {
 }
 
 export interface AppendCommand {
-    events: DcbEvent | DcbEvent[]
+    events: TaggedEvent | TaggedEvent[]
     condition?: AppendCondition
 }
 

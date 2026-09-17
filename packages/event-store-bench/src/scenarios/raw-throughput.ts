@@ -16,10 +16,8 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
     for (let offset = 0; offset < config.eventCount; offset += CHUNK) {
         const size = Math.min(CHUNK, config.eventCount - offset)
         const chunk = Array.from({ length: size }, (_, i) => ({
-            type: "RawEvent",
+            event: { type: "RawEvent", data: { index: offset + i, payload: "x".repeat(80) } },
             tags: Tags.fromObj({ batch: "raw", seq: `${offset + i}` }),
-            data: { index: offset + i, payload: "x".repeat(80) },
-            metadata: {},
         }))
         await store.append({ events: chunk })
     }
