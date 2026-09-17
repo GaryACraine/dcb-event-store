@@ -514,7 +514,7 @@ function buildAppendFunctionParams(
 }
 
 function serializePayload(evt: TaggedEvent): string {
-    return `{"data":${JSON.stringify(evt.event.data)},"metadata":${JSON.stringify(evt.event.metadata)}}`
+    return JSON.stringify({ data: evt.event.data, metadata: evt.event.metadata })
 }
 
 function serializeCommands(commands: AppendCommand[]) {
