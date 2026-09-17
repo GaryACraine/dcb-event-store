@@ -1,5 +1,5 @@
 import { decider, IllegalStateError, NotFoundError } from "@dcb-es/event-store"
-import { StudentWasSubscribedEvent } from "../../Events.js"
+import { studentWasSubscribed } from "../../Events.js"
 import { CourseExists, CourseCapacity, StudentAlreadySubscribed, StudentSubscriptions } from "./decisionModels.js"
 import type { SubscribeStudentToCourse } from "./command.js"
 
@@ -36,7 +36,7 @@ export const subscribeStudentToCourse = decider<
                 `Student ${cmd.data.studentId} is already subscribed to the maximum number of courses`
             )
 
-        return new StudentWasSubscribedEvent({
+        return studentWasSubscribed({
             courseId: cmd.data.courseId,
             studentId: cmd.data.studentId
         })

@@ -1,15 +1,13 @@
 import { Pool } from "pg"
-import { DcbEvent, Query, SequencePosition, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, SequencePosition, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "./PostgresEventStore.js"
 import { advisoryLocks, rowLocks } from "./lockStrategy.js"
 import { LockStrategy } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
-    type,
-    tags,
-    data: {},
-    metadata: {}
+const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): TaggedEvent<AnyEvent> => ({
+    event: { type, data: {} } as AnyEvent,
+    tags
 })
 
 async function collectEvents(

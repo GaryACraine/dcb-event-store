@@ -1,74 +1,91 @@
-import { Tags } from "@dcb-es/event-store"
-import { DcbEvent } from "@dcb-es/event-store"
+import { Tags, Event, TaggedEvent } from "@dcb-es/event-store"
 
-export class CourseWasRegisteredEvent implements DcbEvent {
-    public type: "courseWasRegistered" = "courseWasRegistered"
-    public tags: Tags
-    public data: { courseId: string; title: string; capacity: number }
-    public metadata: unknown = {}
+export type CourseWasRegisteredEvent = Event<
+    "courseWasRegistered",
+    { courseId: string; title: string; capacity: number }
+>
 
-    constructor({ courseId, title, capacity }: { courseId: string; title: string; capacity: number }) {
-        this.tags = Tags.fromObj({ courseId })
-        this.data = { title, capacity, courseId }
-    }
-}
+export const courseWasRegistered = ({
+    courseId,
+    title,
+    capacity
+}: {
+    courseId: string
+    title: string
+    capacity: number
+}): TaggedEvent<CourseWasRegisteredEvent> => ({
+    event: { type: "courseWasRegistered", data: { courseId, title, capacity } },
+    tags: Tags.fromObj({ courseId })
+})
 
-export class StudentWasRegistered implements DcbEvent {
-    public type: "studentWasRegistered" = "studentWasRegistered"
-    public tags: Tags
-    public data: { studentId: string; name: string; studentNumber: number }
-    public metadata: unknown = {}
+export type StudentWasRegistered = Event<
+    "studentWasRegistered",
+    { studentId: string; name: string; studentNumber: number }
+>
 
-    constructor({ studentId, name, studentNumber }: { studentId: string; name: string; studentNumber: number }) {
-        this.tags = Tags.fromObj({ studentId, studentNumberIndex: "global" })
-        this.data = { studentId, name, studentNumber }
-    }
-}
+export const studentWasRegistered = ({
+    studentId,
+    name,
+    studentNumber
+}: {
+    studentId: string
+    name: string
+    studentNumber: number
+}): TaggedEvent<StudentWasRegistered> => ({
+    event: { type: "studentWasRegistered", data: { studentId, name, studentNumber } },
+    // studentNumberIndex tag enables scoped locking for the NextStudentNumber decision model.
+    // Without it, the global student number query has no tag to lock on.
+    tags: Tags.fromObj({ studentId, studentNumberIndex: "global" })
+})
 
-export class CourseCapacityWasChangedEvent implements DcbEvent {
-    type: "courseCapacityWasChanged" = "courseCapacityWasChanged"
-    public tags: Tags
-    public data: { courseId: string; newCapacity: number }
-    public metadata: unknown = {}
+export type CourseCapacityWasChangedEvent = Event<"courseCapacityWasChanged", { courseId: string; newCapacity: number }>
 
-    constructor({ courseId, newCapacity }: { courseId: string; newCapacity: number }) {
-        this.tags = Tags.fromObj({ courseId })
-        this.data = { courseId, newCapacity }
-    }
-}
+export const courseCapacityWasChanged = ({
+    courseId,
+    newCapacity
+}: {
+    courseId: string
+    newCapacity: number
+}): TaggedEvent<CourseCapacityWasChangedEvent> => ({
+    event: { type: "courseCapacityWasChanged", data: { courseId, newCapacity } },
+    tags: Tags.fromObj({ courseId })
+})
 
-export class CourseTitleWasChangedEvent implements DcbEvent {
-    type: "courseTitleWasChanged" = "courseTitleWasChanged"
-    public tags: Tags
-    public data: { courseId: string; newTitle: string }
-    public metadata: unknown = {}
+export type CourseTitleWasChangedEvent = Event<"courseTitleWasChanged", { courseId: string; newTitle: string }>
 
-    constructor({ courseId, newTitle }: { courseId: string; newTitle: string }) {
-        this.tags = Tags.fromObj({ courseId })
-        this.data = { courseId, newTitle }
-    }
-}
+export const courseTitleWasChanged = ({
+    courseId,
+    newTitle
+}: {
+    courseId: string
+    newTitle: string
+}): TaggedEvent<CourseTitleWasChangedEvent> => ({
+    event: { type: "courseTitleWasChanged", data: { courseId, newTitle } },
+    tags: Tags.fromObj({ courseId })
+})
 
-export class StudentWasSubscribedEvent implements DcbEvent {
-    type: "studentWasSubscribed" = "studentWasSubscribed"
-    public tags: Tags
-    public data: { courseId: string; studentId: string }
-    public metadata: unknown = {}
+export type StudentWasSubscribedEvent = Event<"studentWasSubscribed", { courseId: string; studentId: string }>
 
-    constructor({ studentId, courseId }: { studentId: string; courseId: string }) {
-        this.tags = Tags.fromObj({ studentId, courseId })
-        this.data = { studentId, courseId }
-    }
-}
+export const studentWasSubscribed = ({
+    studentId,
+    courseId
+}: {
+    studentId: string
+    courseId: string
+}): TaggedEvent<StudentWasSubscribedEvent> => ({
+    event: { type: "studentWasSubscribed", data: { studentId, courseId } },
+    tags: Tags.fromObj({ studentId, courseId })
+})
 
-export class StudentWasUnsubscribedEvent implements DcbEvent {
-    type: "studentWasUnsubscribed" = "studentWasUnsubscribed"
-    public tags: Tags
-    public data: { courseId: string; studentId: string }
-    public metadata: unknown = {}
+export type StudentWasUnsubscribedEvent = Event<"studentWasUnsubscribed", { courseId: string; studentId: string }>
 
-    constructor({ studentId, courseId }: { studentId: string; courseId: string }) {
-        this.tags = Tags.fromObj({ studentId, courseId })
-        this.data = { studentId, courseId }
-    }
-}
+export const studentWasUnsubscribed = ({
+    studentId,
+    courseId
+}: {
+    studentId: string
+    courseId: string
+}): TaggedEvent<StudentWasUnsubscribedEvent> => ({
+    event: { type: "studentWasUnsubscribed", data: { studentId, courseId } },
+    tags: Tags.fromObj({ studentId, courseId })
+})

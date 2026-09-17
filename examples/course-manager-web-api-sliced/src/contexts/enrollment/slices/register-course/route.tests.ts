@@ -3,7 +3,7 @@ import type { Pool } from "pg"
 import { ApiSpecification, ApiE2ESpecification, expectResponse, expectError } from "@dcb-es/event-store-express"
 import type { EventStore } from "@dcb-es/event-store"
 import { configureRegisterCourseRoute } from "./route.js"
-import { CourseWasRegisteredEvent } from "../../Events.js"
+import { courseWasRegistered } from "../../Events.js"
 
 const spec = ApiSpecification.for({
     configureApi: (store: EventStore) => configureRegisterCourseRoute({ store, pool: {} as Pool })
@@ -19,13 +19,13 @@ describe("POST /courses — register course", () => {
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(
                 expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
 
     test("returns 422 when course already exists", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(expectError(422))
     })
@@ -64,7 +64,7 @@ describe("POST /courses — idempotency key", () => {
             )
             .then(
                 expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
 })

@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { DcbEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalled.js"
@@ -7,11 +7,13 @@ import { rawSqlProjection } from "./rawSqlProjection.js"
 import { rebuildProjection } from "./rebuildProjection.js"
 import { readProjectionStatus } from "./registry/projectionRegistry.js"
 
-const event = (type: string, data: Record<string, unknown> = {}, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata: {}
+const event = (
+    type: string,
+    data: Record<string, unknown> = {},
+    tags: Tags = Tags.fromObj({ e: "1" })
+): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
+    tags
 })
 
 describe("rebuildProjection", () => {
@@ -50,7 +52,9 @@ describe("rebuildProjection", () => {
             },
             evolve: async (event, client) => {
                 if (event.event.type === "ItemAdded") {
-                    await client.query("INSERT INTO rebuild_items (name) VALUES ($1)", [event.event.data.name])
+                    await client.query("INSERT INTO rebuild_items (name) VALUES ($1)", [
+                        (event.event.data as { name: string }).name
+                    ])
                 }
             },
             truncate: async client => {
@@ -170,7 +174,9 @@ describe("rebuildProjection", () => {
             },
             evolve: async (event, client) => {
                 if (event.event.type === "ItemAdded") {
-                    await client.query("INSERT INTO rebuild_items (name) VALUES ($1)", [event.event.data.name])
+                    await client.query("INSERT INTO rebuild_items (name) VALUES ($1)", [
+                        (event.event.data as { name: string }).name
+                    ])
                 }
             },
             truncate: async client => {

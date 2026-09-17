@@ -1,4 +1,4 @@
-import { DcbEvent, AppendCondition, Query } from "@dcb-es/event-store"
+import { TaggedEvent, AppendCondition, Query } from "@dcb-es/event-store"
 
 /**
  * FNV-1a 64-bit hash → signed bigint for pg_advisory_xact_lock.
@@ -68,7 +68,7 @@ export interface WriterLockKeys {
     intentS: bigint[]
 }
 
-export function computeWriterLockKeys(events: DcbEvent[], condition?: AppendCondition): WriterLockKeys {
+export function computeWriterLockKeys(events: TaggedEvent[], condition?: AppendCondition): WriterLockKeys {
     const leaf = new Set<bigint>()
     const intent = new Set<bigint>()
 
@@ -83,9 +83,9 @@ export function computeWriterLockKeys(events: DcbEvent[], condition?: AppendCond
     }
 
     for (const evt of events) {
-        intent.add(typeIntentKey(evt.type))
+        intent.add(typeIntentKey(evt.event.type))
         for (const tag of evt.tags.values) {
-            leaf.add(leafKey(evt.type, tag))
+            leaf.add(leafKey(evt.event.type, tag))
         }
     }
 

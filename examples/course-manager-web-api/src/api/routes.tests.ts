@@ -2,11 +2,11 @@ import { describe, test } from "vitest"
 import { ApiSpecification, ApiE2ESpecification, expectResponse, expectError } from "@dcb-es/event-store-express"
 import { configureRoutes } from "./routes.js"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged
 } from "./Events.js"
 
 const spec = ApiSpecification.for({ configureApi: configureRoutes })
@@ -18,13 +18,13 @@ describe("POST /courses — register course", () => {
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(
                 expectResponse(201, { body: { id: "c1" } }),
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
 
     test("returns 422 when course already exists", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(expectError(422))
     })
@@ -36,13 +36,13 @@ describe("POST /students — register student", () => {
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(
                 expectResponse(201, { body: { id: "s1" } }),
-                new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             )
     })
 
     test("returns 422 when student already exists", async () => {
         await spec
-            .existingEvents(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .existingEvents(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(expectError(422))
     })
@@ -51,9 +51,9 @@ describe("POST /students — register student", () => {
 describe("PUT /courses/:courseId/capacity — update capacity", () => {
     test("updates capacity and returns 204", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 50 }))
-            .then(expectResponse(204), new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 }))
+            .then(expectResponse(204), courseCapacityWasChanged({ courseId: "c1", newCapacity: 50 }))
     })
 
     test("returns 404 when course does not exist", async () => {
@@ -66,16 +66,16 @@ describe("PUT /courses/:courseId/capacity — update capacity", () => {
 describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
     test("subscribes student and returns 201", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
-            .then(expectResponse(201), new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(expectResponse(201), studentWasSubscribed({ courseId: "c1", studentId: "s1" }))
     })
 
     test("returns 422 when course is full", async () => {
         await spec
             .existingEvents(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 1 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 1 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s2" }))
             .then(expectError(422, { detail: "Course c1 is full." }))
@@ -92,11 +92,11 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
     test("unsubscribes student and returns 204", async () => {
         await spec
             .existingEvents(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.delete("/courses/c1/subscriptions/s1"))
-            .then(expectResponse(204), new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" }))
+            .then(expectResponse(204), studentWasUnsubscribed({ courseId: "c1", studentId: "s1" }))
     })
 })
 

@@ -4,7 +4,8 @@ import {
     AppendCommand,
     ReadOptions,
     SubscribeOptions,
-    validateAppendCondition
+    validateAppendCondition,
+    TaggedEvent
 } from "../EventStore.js"
 import { AppendConditionError } from "../AppendConditionError.js"
 import { SequencePosition } from "../SequencePosition.js"
@@ -102,7 +103,8 @@ export class MemoryEventStore implements EventStore {
             }
 
             for (const ev of evts) {
-                const messageId = ev.id ?? uuid()
+                const e = ev as TaggedEvent
+                const messageId = e.id ?? uuid()
 
                 const existingPosition = this.messageIdIndex.get(messageId)
                 if (existingPosition) {
@@ -112,10 +114,12 @@ export class MemoryEventStore implements EventStore {
 
                 const position = offsetPosition(lastPosition(this.events), ++eventIndex)
                 allNewEvents.push({
-                    event: ev,
+                    event: e.event,
+                    tags: e.tags,
                     position,
                     id: messageId,
-                    recordedAt: now
+                    recordedAt: now,
+                    schemaVersion: e.schemaVersion ?? "1"
                 })
             }
         }

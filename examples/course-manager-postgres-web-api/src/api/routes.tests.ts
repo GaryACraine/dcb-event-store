@@ -23,11 +23,11 @@ import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { configureRoutes } from "./routes.js"
 import { courseSubscriptionsProjection, PROJECTION_NAME } from "./PostgresCourseSubscriptionsProjection.js"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged
 } from "./Events.js"
 
 // ---------------------------------------------------------------------------
@@ -48,13 +48,13 @@ describe("POST /courses — register course", () => {
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(
                 expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
 
     test("returns 422 when course already exists", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses").send({ id: "c1", title: "Math", capacity: 30 }))
             .then(expectError(422))
     })
@@ -66,13 +66,13 @@ describe("POST /students — register student", () => {
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(
                 expectResponse(201, { body: { id: "s1" }, headers: { etag: '"1"' } }),
-                new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             )
     })
 
     test("returns 422 when student already exists", async () => {
         await spec
-            .existingEvents(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .existingEvents(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(expectError(422))
     })
@@ -81,11 +81,11 @@ describe("POST /students — register student", () => {
 describe("PUT /courses/:courseId/capacity — update capacity", () => {
     test("updates capacity and returns 204", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 50 }))
             .then(
                 expectResponse(204, { headers: { etag: '"2"' } }),
-                new CourseCapacityWasChangedEvent({ courseId: "c1", newCapacity: 50 })
+                courseCapacityWasChanged({ courseId: "c1", newCapacity: 50 })
             )
     })
 
@@ -99,19 +99,19 @@ describe("PUT /courses/:courseId/capacity — update capacity", () => {
 describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
     test("subscribes student and returns 201", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
             .then(
                 expectResponse(201, { headers: { etag: '"2"' } }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
     })
 
     test("returns 422 when course is full", async () => {
         await spec
             .existingEvents(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 1 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 1 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s2" }))
             .then(expectError(422, { detail: "Course c1 is full." }))
@@ -128,13 +128,13 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
     test("unsubscribes student and returns 204", async () => {
         await spec
             .existingEvents(
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.delete("/courses/c1/subscriptions/s1"))
             .then(
                 expectResponse(204, { headers: { etag: '"3"' } }),
-                new StudentWasUnsubscribedEvent({ courseId: "c1", studentId: "s1" })
+                studentWasUnsubscribed({ courseId: "c1", studentId: "s1" })
             )
     })
 })
@@ -148,7 +148,7 @@ describe("POST /courses — idempotency key (unit, MemoryEventStore)", () => {
             )
             .then(
                 expectResponse(201, { body: { id: "c1" }, headers: { etag: '"1"' } }),
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             )
     })
 
@@ -204,14 +204,14 @@ describe("POST /students — request body validation", () => {
 describe("PUT /courses/:courseId/capacity — request body validation", () => {
     test("returns 400 when newCapacity is negative", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: -1 }))
             .then(expectError(400))
     })
 
     test("returns 400 when newCapacity is zero", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 0 }))
             .then(expectError(400))
     })
@@ -220,7 +220,7 @@ describe("PUT /courses/:courseId/capacity — request body validation", () => {
 describe("POST /courses/:courseId/subscriptions — request body validation", () => {
     test("returns 400 when studentId is missing", async () => {
         await spec
-            .existingEvents(new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }))
+            .existingEvents(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when(agent => agent.post("/courses/c1/subscriptions").send({}))
             .then(expectError(400))
     })
@@ -477,7 +477,7 @@ describe("Read-side integration — Postgres + Pongo projections", () => {
 
             // Append a course event — will be at position 1 after sequence reset
             const appendedPosition = await eventStore.append({
-                events: new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })
+                events: courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })
             })
 
             const message = await messagePromise

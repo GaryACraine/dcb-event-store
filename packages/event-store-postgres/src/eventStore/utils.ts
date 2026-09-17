@@ -1,4 +1,4 @@
-import { Tags, DcbEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
+import { Tags, TaggedEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
 
 export type DbWriteEvent = {
     type: string
@@ -18,25 +18,20 @@ export type DbReadEvent = {
 }
 
 export const dbEventConverter = {
-    toDb: (dcbEvent: DcbEvent): DbWriteEvent => ({
-        type: dcbEvent.type,
-        payload: JSON.stringify({ data: dcbEvent.data, metadata: dcbEvent.metadata }),
-        tags: [...dcbEvent.tags.values]
+    toDb: (taggedEvent: TaggedEvent): DbWriteEvent => ({
+        type: taggedEvent.event.type,
+        payload: JSON.stringify({ data: taggedEvent.event.data, metadata: taggedEvent.event.metadata }),
+        tags: [...taggedEvent.tags.values]
     }),
     fromDb: (dbEvent: DbReadEvent): SequencedEvent => {
         const { data, metadata } = JSON.parse(dbEvent.payload)
         return {
+            event: { type: dbEvent.type, data, ...(metadata ? { metadata } : {}) },
+            tags: Tags.from(dbEvent.tags),
             position: SequencePosition.fromString(dbEvent.sequence_position),
             id: dbEvent.message_id,
             recordedAt: new Date(dbEvent.recorded_at),
-            event: {
-                type: dbEvent.type,
-                data,
-                metadata,
-                tags: Tags.from(dbEvent.tags),
-                id: dbEvent.message_id,
-                schemaVersion: dbEvent.schema_version
-            }
+            schemaVersion: dbEvent.schema_version
         }
     }
 }

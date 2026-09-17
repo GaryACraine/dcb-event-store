@@ -3,7 +3,7 @@ import type { Pool } from "pg"
 import { ApiSpecification, expectResponse, expectError } from "@dcb-es/event-store-express"
 import type { EventStore } from "@dcb-es/event-store"
 import { configureRegisterStudentRoute } from "./route.js"
-import { StudentWasRegistered } from "../../Events.js"
+import { studentWasRegistered } from "../../Events.js"
 
 const spec = ApiSpecification.for({
     configureApi: (store: EventStore) => configureRegisterStudentRoute({ store, pool: {} as Pool })
@@ -15,13 +15,13 @@ describe("POST /students — register student", () => {
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(
                 expectResponse(201, { body: { id: "s1" }, headers: { etag: '"1"' } }),
-                new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             )
     })
 
     test("returns 422 when student already exists", async () => {
         await spec
-            .existingEvents(new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
+            .existingEvents(studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 }))
             .when(agent => agent.post("/students").send({ id: "s1", name: "Alice" }))
             .then(expectError(422))
     })

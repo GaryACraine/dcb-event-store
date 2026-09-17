@@ -1,11 +1,11 @@
 import { decider, IllegalStateError, NotFoundError, ValidationError } from "@dcb-es/event-store"
 import {
-    CourseWasRegisteredEvent,
-    StudentWasRegistered,
-    StudentWasSubscribedEvent,
-    StudentWasUnsubscribedEvent,
-    CourseCapacityWasChangedEvent,
-    CourseTitleWasChangedEvent
+    courseWasRegistered,
+    studentWasRegistered,
+    studentWasSubscribed,
+    studentWasUnsubscribed,
+    courseCapacityWasChanged,
+    courseTitleWasChanged
 } from "./Events.js"
 import {
     CourseCapacity,
@@ -34,7 +34,7 @@ export const registerCourse = decider<RegisterCourse, { courseExists: ReturnType
     decide: (cmd, state) => {
         if (state.courseExists) throw new IllegalStateError(`Course with id ${cmd.data.id} already exists`)
 
-        return new CourseWasRegisteredEvent({
+        return courseWasRegistered({
             courseId: cmd.data.id,
             title: cmd.data.title,
             capacity: cmd.data.capacity
@@ -57,7 +57,7 @@ export const registerStudent = decider<
         if (state.studentAlreadyRegistered)
             throw new IllegalStateError(`Student with id ${cmd.data.id} already registered.`)
 
-        return new StudentWasRegistered({
+        return studentWasRegistered({
             studentId: cmd.data.id,
             name: cmd.data.name,
             studentNumber: state.nextStudentNumber
@@ -78,7 +78,7 @@ export const updateCourseCapacity = decider<
         if (state.courseCapacity.capacity === cmd.data.newCapacity)
             throw new ValidationError("New capacity is the same as the current capacity.")
 
-        return new CourseCapacityWasChangedEvent({
+        return courseCapacityWasChanged({
             courseId: cmd.data.courseId,
             newCapacity: cmd.data.newCapacity
         })
@@ -98,7 +98,7 @@ export const updateCourseTitle = decider<
         if (state.courseTitle === cmd.data.newTitle)
             throw new ValidationError("New title is the same as the current title.")
 
-        return new CourseTitleWasChangedEvent({
+        return courseTitleWasChanged({
             courseId: cmd.data.courseId,
             newTitle: cmd.data.newTitle
         })
@@ -136,7 +136,7 @@ export const subscribeStudentToCourse = decider<
                 `Student ${cmd.data.studentId} is already subscribed to the maximum number of courses`
             )
 
-        return new StudentWasSubscribedEvent({
+        return studentWasSubscribed({
             courseId: cmd.data.courseId,
             studentId: cmd.data.studentId
         })
@@ -162,7 +162,7 @@ export const unsubscribeStudentFromCourse = decider<
         if (!state.studentAlreadySubscribed)
             throw new NotFoundError(`Student ${cmd.data.studentId} is not subscribed to course ${cmd.data.courseId}.`)
 
-        return new StudentWasUnsubscribedEvent({
+        return studentWasUnsubscribed({
             courseId: cmd.data.courseId,
             studentId: cmd.data.studentId
         })

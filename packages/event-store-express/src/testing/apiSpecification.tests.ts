@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { EventStore } from "@dcb-es/event-store"
-import { Tags, DcbEvent, IllegalStateError } from "@dcb-es/event-store"
+import { Tags, AnyEvent, Event, TaggedEvent, IllegalStateError } from "@dcb-es/event-store"
 import { on } from "../handler.js"
 import { OK, Created, NoContent } from "../responses.js"
 import type { WebApiSetup } from "../application.js"
@@ -8,17 +8,10 @@ import { ApiSpecification, expectResponse, expectError } from "./apiSpecificatio
 
 // Minimal inline domain for testing
 
-class ItemCreatedEvent implements DcbEvent {
-    type: "itemCreated" = "itemCreated"
-    tags: Tags
-    data: { id: string; name: string }
-    metadata: unknown = {}
-
-    constructor({ id, name }: { id: string; name: string }) {
-        this.tags = Tags.fromObj({ itemId: id })
-        this.data = { id, name }
-    }
-}
+const makeItemCreated = ({ id, name }: { id: string; name: string }): TaggedEvent<AnyEvent> => ({
+    event: { type: "itemCreated", data: { id, name } } as AnyEvent,
+    tags: Tags.fromObj({ itemId: id })
+})
 
 function configureTestApi(store: EventStore): WebApiSetup {
     return router => {
@@ -28,7 +21,7 @@ function configureTestApi(store: EventStore): WebApiSetup {
                 const { id, name } = req.body as { id: string; name: string }
 
                 // Read events to check if item exists
-                const existing: DcbEvent[] = []
+                const existing: Event[] = []
                 for await (const se of store.read({
                     isAll: false,
                     items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }]
@@ -40,7 +33,7 @@ function configureTestApi(store: EventStore): WebApiSetup {
                     throw new IllegalStateError(`Item ${id} already exists`)
                 }
 
-                await store.append({ events: new ItemCreatedEvent({ id, name }) })
+                await store.append({ events: makeItemCreated({ id, name }) })
                 return Created({ createdId: id })
             })
         )
@@ -49,7 +42,7 @@ function configureTestApi(store: EventStore): WebApiSetup {
             "/items/:id",
             on(async req => {
                 const { id } = req.params
-                const events: DcbEvent[] = []
+                const events: Event[] = []
                 for await (const se of store.read({
                     isAll: false,
                     items: [{ types: ["itemCreated"], tags: Tags.fromObj({ itemId: id }) }]
@@ -59,8 +52,8 @@ function configureTestApi(store: EventStore): WebApiSetup {
                 if (events.length === 0) {
                     throw new (await import("@dcb-es/event-store")).NotFoundError(`Item ${id} not found`)
                 }
-                const item = events[0] as ItemCreatedEvent
-                return OK({ body: { id: item.data.id, name: item.data.name } })
+                const itemData = events[0].data as { id: string; name: string }
+                return OK({ body: { id: itemData.id, name: itemData.name } })
             })
         )
 
@@ -84,14 +77,14 @@ function configureSimpleApi(store: EventStore): WebApiSetup {
             "/things",
             on(async req => {
                 const { id, name } = req.body as { id: string; name: string }
-                const events: DcbEvent[] = []
+                const events: Event[] = []
                 for await (const se of store.read(Query.all())) {
                     if (se.event.type === "itemCreated" && (se.event.data as { id: string }).id === id) {
                         events.push(se.event)
                     }
                 }
                 if (events.length > 0) throw new IllegalStateError(`Item ${id} already exists`)
-                await store.append({ events: new ItemCreatedEvent({ id, name }) })
+                await store.append({ events: makeItemCreated({ id, name }) })
                 return Created({ createdId: id })
             })
         )
@@ -114,12 +107,12 @@ describe("ApiSpecification", () => {
     it("asserts new events appended by request", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
             .when(agent => agent.post("/things").send({ id: "t1", name: "Thing One" }))
-            .then(expectResponse(201), new ItemCreatedEvent({ id: "t1", name: "Thing One" }))
+            .then(expectResponse(201), makeItemCreated({ id: "t1", name: "Thing One" }))
     })
 
     it("seeded events affect decision outcome — duplicate rejected", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
-            .existingEvents(new ItemCreatedEvent({ id: "t1", name: "Thing One" }))
+            .existingEvents(makeItemCreated({ id: "t1", name: "Thing One" }))
             .when(agent => agent.post("/things").send({ id: "t1", name: "Thing One" }))
             .then(expectResponse(422))
     })
@@ -127,7 +120,7 @@ describe("ApiSpecification", () => {
     it("thenEvents asserts events without response check", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
             .when(agent => agent.post("/things").send({ id: "t2", name: "Thing Two" }))
-            .thenEvents(new ItemCreatedEvent({ id: "t2", name: "Thing Two" }))
+            .thenEvents(makeItemCreated({ id: "t2", name: "Thing Two" }))
     })
 
     it("thenNothingAppended passes when no events appended", async () => {
@@ -146,7 +139,7 @@ describe("ApiSpecification", () => {
 
     it("expectError checks problem+json content-type and status", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
-            .existingEvents(new ItemCreatedEvent({ id: "dup", name: "Dup" }))
+            .existingEvents(makeItemCreated({ id: "dup", name: "Dup" }))
             .when(agent => agent.post("/things").send({ id: "dup", name: "Dup" }))
             .then(expectError(422, { title: "Unprocessable Entity" }))
     })
@@ -156,7 +149,7 @@ describe("ApiSpecification", () => {
 
         // First chain seeds t4 via existingEvents
         await spec
-            .existingEvents(new ItemCreatedEvent({ id: "t4", name: "Thing Four" }))
+            .existingEvents(makeItemCreated({ id: "t4", name: "Thing Four" }))
             .when(agent => agent.post("/things").send({ id: "t4", name: "Thing Four" }))
             .then(expectResponse(422))
 
@@ -166,8 +159,8 @@ describe("ApiSpecification", () => {
 
     it("seeded events do not appear in newEvents assertions", async () => {
         await ApiSpecification.for({ configureApi: configureSimpleApi })
-            .existingEvents(new ItemCreatedEvent({ id: "seed", name: "Seed" }))
+            .existingEvents(makeItemCreated({ id: "seed", name: "Seed" }))
             .when(agent => agent.post("/things").send({ id: "new", name: "New" }))
-            .thenEvents(new ItemCreatedEvent({ id: "new", name: "New" }))
+            .thenEvents(makeItemCreated({ id: "new", name: "New" }))
     })
 })

@@ -1,5 +1,5 @@
 import { decider, IllegalStateError } from "@dcb-es/event-store"
-import { CourseWasRegisteredEvent } from "../../Events.js"
+import { courseWasRegistered } from "../../Events.js"
 import { CourseExists } from "./decisionModels.js"
 import type { RegisterCourse } from "./command.js"
 
@@ -10,7 +10,7 @@ export const registerCourse = decider<RegisterCourse, { courseExists: ReturnType
     decide: (cmd, state) => {
         if (state.courseExists) throw new IllegalStateError(`Course with id ${cmd.data.id} already exists`)
 
-        return new CourseWasRegisteredEvent({
+        return courseWasRegistered({
             courseId: cmd.data.id,
             title: cmd.data.title,
             capacity: cmd.data.capacity

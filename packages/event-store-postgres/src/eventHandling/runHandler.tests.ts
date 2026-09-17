@@ -1,15 +1,13 @@
 import { Pool } from "pg"
-import { DcbEvent, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { runHandler } from "./runHandler.js"
 import { ensureHandlersInstalled } from "./ensureHandlersInstalled.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" }), data: unknown = {}): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata: {}
+const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" }), data: unknown = {}): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
+    tags
 })
 
 describe("runHandler", () => {

@@ -1,7 +1,8 @@
 import { Pool } from "pg"
 import {
     AppendConditionError,
-    DcbEvent,
+    AnyEvent,
+    TaggedEvent,
     Query,
     SequencePosition,
     streamAllEventsToArray,
@@ -11,11 +12,9 @@ import { PostgresEventStore } from "./PostgresEventStore.js"
 import { advisoryLocks } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string, tags: Tags, data: unknown = {}, metadata: unknown = {}): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata
+const event = (type: string, tags: Tags, data: unknown = {}, metadata?: unknown): TaggedEvent<AnyEvent> => ({
+    event: { type, data, ...(metadata !== undefined ? { metadata } : {}) } as AnyEvent,
+    tags
 })
 
 describe("schema optimisations", () => {
@@ -75,7 +74,7 @@ describe("schema optimisations", () => {
     describe("query plans use indexes", () => {
         beforeAll(async () => {
             // Seed enough data for the planner to prefer index scans
-            const events: DcbEvent[] = []
+            const events: TaggedEvent<AnyEvent>[] = []
             for (let i = 0; i < 500; i++) {
                 events.push(event(`Type${i % 10}`, Tags.from([`entity=E${i}`, `batch=B${i % 5}`]), { i }))
             }
@@ -134,7 +133,7 @@ describe("schema optimisations", () => {
             expect(events[0].event.type).toBe("TestEvent")
             expect(events[0].event.data).toEqual({ foo: "bar" })
             expect(events[0].event.metadata).toEqual({ userId: "U1" })
-            expect(events[0].event.tags.equals(Tags.from(["entity=E1"]))).toBe(true)
+            expect(events[0].tags.equals(Tags.from(["entity=E1"]))).toBe(true)
             expect(events[0].position.toString()).toBe("1")
         })
 

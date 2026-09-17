@@ -1,25 +1,26 @@
 import { Pool, PoolClient } from "pg"
-import { DcbEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
+import { TaggedEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
 import { Projection } from "./projection.js"
 
 export interface ProjectionSpecGiven {
-    given(events: DcbEvent[]): ProjectionSpecWhen
+    given(events: TaggedEvent[]): ProjectionSpecWhen
 }
 
 export interface ProjectionSpecWhen {
-    when(events: DcbEvent[]): ProjectionSpecThen
+    when(events: TaggedEvent[]): ProjectionSpecThen
 }
 
 export interface ProjectionSpecThen {
     then(assert: (client: PoolClient) => Promise<void>): Promise<void>
 }
 
-function toSequencedEvents(events: DcbEvent[], startPosition: number): SequencedEvent[] {
-    return events.map((event, index) => ({
-        event,
+function toSequencedEvents(events: TaggedEvent[], startPosition: number): SequencedEvent[] {
+    return events.map((tagged, index) => ({
+        event: tagged.event,
+        tags: tagged.tags,
         position: SequencePosition.fromString(String(startPosition + index + 1)),
-        id: uuid(),
+        id: tagged.id ?? uuid(),
         recordedAt: new Date()
     }))
 }
@@ -40,9 +41,9 @@ export const ProjectionSpec = {
         const { projection, pool } = options
 
         return {
-            given(givenEvents: DcbEvent[]): ProjectionSpecWhen {
+            given(givenEvents: TaggedEvent[]): ProjectionSpecWhen {
                 return {
-                    when(whenEvents: DcbEvent[]): ProjectionSpecThen {
+                    when(whenEvents: TaggedEvent[]): ProjectionSpecThen {
                         return {
                             async then(assert: (client: PoolClient) => Promise<void>): Promise<void> {
                                 const client = await pool.connect()

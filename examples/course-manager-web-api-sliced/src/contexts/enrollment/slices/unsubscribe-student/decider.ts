@@ -1,5 +1,5 @@
 import { decider, NotFoundError } from "@dcb-es/event-store"
-import { StudentWasUnsubscribedEvent } from "../../Events.js"
+import { studentWasUnsubscribed } from "../../Events.js"
 import { CourseExists, StudentAlreadySubscribed } from "./decisionModels.js"
 import type { UnsubscribeStudentFromCourse } from "./command.js"
 
@@ -22,7 +22,7 @@ export const unsubscribeStudentFromCourse = decider<
         if (!state.studentAlreadySubscribed)
             throw new NotFoundError(`Student ${cmd.data.studentId} is not subscribed to course ${cmd.data.courseId}.`)
 
-        return new StudentWasUnsubscribedEvent({
+        return studentWasUnsubscribed({
             courseId: cmd.data.courseId,
             studentId: cmd.data.studentId
         })

@@ -1,4 +1,4 @@
-import { AppendCommand, DcbEvent, ensureIsArray } from "@dcb-es/event-store"
+import { AppendCommand, TaggedEvent, ensureIsArray } from "@dcb-es/event-store"
 import { LockStrategy } from "./lockStrategy.js"
 import { ConditionRow } from "./copyWriter.js"
 
@@ -11,7 +11,7 @@ export function analyseCommands(
     leafLockKeys: bigint[]
     intentLockKeys: bigint[]
     conditions: ConditionRow[]
-    eventIterator: () => Iterable<DcbEvent>
+    eventIterator: () => Iterable<TaggedEvent>
 } {
     const leafSet = new Set<bigint>()
     const intentSet = new Set<bigint>()

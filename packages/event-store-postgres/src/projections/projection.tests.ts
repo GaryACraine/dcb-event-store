@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { DcbEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalled.js"
 import { createConsumer } from "../eventHandling/consumer.js"
@@ -7,11 +7,13 @@ import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { rawSqlProjection } from "./rawSqlProjection.js"
 import { projectionToProcessor } from "./projectionAdapter.js"
 
-const event = (type: string, data: Record<string, unknown> = {}, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata: {}
+const event = (
+    type: string,
+    data: Record<string, unknown> = {},
+    tags: Tags = Tags.fromObj({ e: "1" })
+): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
+    tags
 })
 
 describe("rawSqlProjection", () => {
@@ -38,7 +40,9 @@ describe("rawSqlProjection", () => {
             },
             evolve: async (event, client) => {
                 if (event.event.type === "ItemAdded") {
-                    await client.query("INSERT INTO test_items (name) VALUES ($1)", [event.event.data.name])
+                    await client.query("INSERT INTO test_items (name) VALUES ($1)", [
+                        (event.event.data as { name: string }).name
+                    ])
                 }
             },
             truncate: async client => {
@@ -57,13 +61,15 @@ describe("rawSqlProjection", () => {
             await projection.handle(
                 [
                     {
-                        event: event("ItemAdded", { name: "item-1" }),
+                        event: event("ItemAdded", { name: "item-1" }).event,
+                        tags: Tags.fromObj({ e: "1" }),
                         position: SequencePosition.fromString("1"),
                         id: uuid(),
                         recordedAt: new Date()
                     },
                     {
-                        event: event("ItemAdded", { name: "item-2" }),
+                        event: event("ItemAdded", { name: "item-2" }).event,
+                        tags: Tags.fromObj({ e: "1" }),
                         position: SequencePosition.fromString("2"),
                         id: uuid(),
                         recordedAt: new Date()

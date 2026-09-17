@@ -2,7 +2,8 @@ import { Pool } from "pg"
 import {
     AppendCondition,
     AppendConditionError,
-    DcbEvent,
+    AnyEvent,
+    TaggedEvent,
     Query,
     SequencePosition,
     streamAllEventsToArray,
@@ -12,11 +13,9 @@ import { PostgresEventStore } from "./PostgresEventStore.js"
 import { LockStrategy, advisoryLocks, rowLocks } from "./lockStrategy.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
-const event = (type: string, tags: Tags, data: unknown = {}, metadata: unknown = {}): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata
+const event = (type: string, tags: Tags, data: unknown = {}, metadata?: unknown): TaggedEvent<AnyEvent> => ({
+    event: { type, data, ...(metadata !== undefined ? { metadata } : {}) } as AnyEvent,
+    tags
 })
 
 const scopedCondition = (types: string[], tags: Tags, after: SequencePosition): AppendCondition => ({
@@ -77,7 +76,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             expect(events[0].event.type).toBe("TestEvent")
             expect(events[0].event.data).toEqual({ foo: "bar" })
             expect(events[0].event.metadata).toEqual({ userId: "U1" })
-            expect(events[0].event.tags.equals(Tags.from(["entity=E1"]))).toBe(true)
+            expect(events[0].tags.equals(Tags.from(["entity=E1"]))).toBe(true)
         })
 
         test("round-trips complex nested data and metadata", async () => {
@@ -90,7 +89,9 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
         })
 
         test("rejects empty events array", async () => {
-            await expect(store.append({ events: [] as DcbEvent[] })).rejects.toThrow("Cannot append zero events")
+            await expect(store.append({ events: [] as TaggedEvent<AnyEvent>[] })).rejects.toThrow(
+                "Cannot append zero events"
+            )
         })
     })
 
@@ -491,7 +492,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const meterCount = 100
             const fieldsPerMeter = 10
 
-            const commands: { events: DcbEvent[]; condition?: AppendCondition }[] = []
+            const commands: { events: TaggedEvent<AnyEvent>[]; condition?: AppendCondition }[] = []
             for (let m = 0; m < meterCount; m++) {
                 const meterId = `M${String(m).padStart(4, "0")}`
                 const meterTag = Tags.from([`meterId=${meterId}`])
@@ -540,7 +541,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const tags = Tags.from(["key=val-with-dash", "other=has_underscore"])
             await s.append({ events: [event("A", tags), event("B", tags)] })
             const events = await streamAllEventsToArray(s.read(Query.all()))
-            expect(events[0].event.tags.equals(tags)).toBe(true)
+            expect(events[0].tags.equals(tags)).toBe(true)
         })
 
         test("deeply nested JSON payload round-trips correctly", async () => {
@@ -628,7 +629,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const events = await streamAllEventsToArray(store.read(Query.fromItems([{ types: ["B"] }]), { limit: 1 }))
             expect(events.length).toBe(1)
             expect(events[0].event.type).toBe("B")
-            expect(events[0].event.tags.equals(Tags.fromObj({ e: "2" }))).toBe(true)
+            expect(events[0].tags.equals(Tags.fromObj({ e: "2" }))).toBe(true)
         })
 
         test("limit with type filter backward", async () => {
@@ -637,7 +638,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             )
             expect(events.length).toBe(1)
             expect(events[0].event.type).toBe("B")
-            expect(events[0].event.tags.equals(Tags.fromObj({ e: "3" }))).toBe(true)
+            expect(events[0].tags.equals(Tags.fromObj({ e: "3" }))).toBe(true)
         })
 
         test("limit with type filter and after", async () => {
@@ -758,7 +759,7 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const tags = Tags.from(Array.from({ length: 50 }, (_, i) => `key${i}=val${i}`))
             await store.append({ events: event("ManyTags", tags) })
             const events = await streamAllEventsToArray(store.read(Query.all()))
-            expect(events[0].event.tags.equals(tags)).toBe(true)
+            expect(events[0].tags.equals(tags)).toBe(true)
         })
 
         test("multiple reads interleaved with appends", async () => {
@@ -787,6 +788,66 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
                 "2",
                 "1"
             ])
+        })
+    })
+
+    describe("SequencedEvent property completeness", () => {
+        test("id is a non-empty string when not provided", async () => {
+            await store.append({ events: event("MyEvent", Tags.fromObj({ e: "1" })) })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(typeof se.id).toBe("string")
+            expect(se.id.length).toBeGreaterThan(0)
+        })
+
+        test("id is preserved when provided", async () => {
+            const id = "00000000-0000-0000-0000-000000000001"
+            await store.append({
+                events: { event: { type: "MyEvent", data: {} } as AnyEvent, tags: Tags.fromObj({ e: "1" }), id }
+            })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.id).toBe(id)
+        })
+
+        test("recordedAt is populated from the database as a Date", async () => {
+            const before = new Date()
+            await store.append({ events: event("MyEvent", Tags.fromObj({ e: "1" })) })
+            const after = new Date()
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.recordedAt).toBeInstanceOf(Date)
+            expect(se.recordedAt.getTime()).toBeGreaterThanOrEqual(before.getTime())
+            expect(se.recordedAt.getTime()).toBeLessThanOrEqual(after.getTime())
+        })
+
+        test("schemaVersion defaults to '1' when not provided", async () => {
+            await store.append({ events: event("MyEvent", Tags.fromObj({ e: "1" })) })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.schemaVersion).toBe("1")
+        })
+
+        test("schemaVersion round-trips custom values", async () => {
+            await store.append({
+                events: {
+                    event: { type: "MyEvent", data: {} } as AnyEvent,
+                    tags: Tags.fromObj({ e: "1" }),
+                    schemaVersion: "5"
+                }
+            })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.schemaVersion).toBe("5")
+        })
+
+        test("metadata survives JSON serialization round-trip", async () => {
+            const metadata = { correlationId: "abc-123", nested: { key: "value" } }
+            await store.append({ events: event("MyEvent", Tags.fromObj({ e: "1" }), {}, metadata) })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.event.metadata).toEqual(metadata)
+        })
+
+        test("tags is on the SequencedEvent envelope, not inside event", async () => {
+            const tags = Tags.fromObj({ courseId: "c1" })
+            await store.append({ events: event("MyEvent", tags) })
+            const [se] = await streamAllEventsToArray(store.read(Query.all()))
+            expect(se.tags.equals(tags)).toBe(true)
         })
     })
 })

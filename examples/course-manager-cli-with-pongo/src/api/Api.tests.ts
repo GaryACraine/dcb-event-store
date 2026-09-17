@@ -14,7 +14,7 @@ import {
     type RunningConsumer
 } from "@dcb-es/event-store-postgres"
 import { courseSubscriptionsProjection } from "./PostgresCourseSubscriptionsProjection.js"
-import { CourseWasRegisteredEvent, StudentWasRegistered, StudentWasSubscribedEvent } from "./Events.js"
+import { courseWasRegistered, studentWasRegistered, studentWasSubscribed } from "./Events.js"
 
 const COURSE_1 = {
     id: "course-1",
@@ -174,7 +174,7 @@ describe("ProjectionSpec for pongoProjection", () => {
     test("course registration is projected into Pongo document", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([])
-            .when([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .when([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM courses WHERE _id = 'c1'")
                 expect(result.rows[0].data).toMatchObject({ courseId: "c1", title: "Math", capacity: 30 })
@@ -184,7 +184,7 @@ describe("ProjectionSpec for pongoProjection", () => {
     test("student registration is projected into Pongo document", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([])
-            .when([new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })])
+            .when([studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })])
             .then(async client => {
                 const result = await client.query("SELECT data FROM students WHERE _id = 's1'")
                 expect(result.rows[0].data).toMatchObject({
@@ -198,10 +198,10 @@ describe("ProjectionSpec for pongoProjection", () => {
     test("subscription embeds student in course and course in student", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
             .given([
-                new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 }),
-                new StudentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
+                courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }),
+                studentWasRegistered({ studentId: "s1", name: "Alice", studentNumber: 1 })
             ])
-            .when([new StudentWasSubscribedEvent({ courseId: "c1", studentId: "s1" })])
+            .when([studentWasSubscribed({ courseId: "c1", studentId: "s1" })])
             .then(async client => {
                 const courseResult = await client.query("SELECT data FROM courses WHERE _id = 'c1'")
                 expect(courseResult.rows[0].data.subscribedStudents).toEqual([
@@ -217,7 +217,7 @@ describe("ProjectionSpec for pongoProjection", () => {
 
     test("changes are rolled back after assertion", async () => {
         await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
-            .given([new CourseWasRegisteredEvent({ courseId: "c1", title: "Math", capacity: 30 })])
+            .given([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
             .when([])
             .then(async client => {
                 const result = await client.query("SELECT count(*) as cnt FROM courses")

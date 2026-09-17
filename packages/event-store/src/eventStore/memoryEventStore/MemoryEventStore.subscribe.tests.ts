@@ -1,14 +1,12 @@
 import { MemoryEventStore } from "./MemoryEventStore.js"
-import { DcbEvent, SequencedEvent } from "../EventStore.js"
+import { TaggedEvent, SequencedEvent } from "../EventStore.js"
 import { SequencePosition } from "../SequencePosition.js"
 import { Tags } from "../Tags.js"
 import { Query } from "../Query.js"
 
-const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
-    type,
-    tags,
-    data: {},
-    metadata: {}
+const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" })): TaggedEvent => ({
+    event: { type, data: {}, kind: "Event" },
+    tags
 })
 
 async function collectEvents(

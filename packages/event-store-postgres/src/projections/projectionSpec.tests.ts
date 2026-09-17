@@ -1,14 +1,16 @@
 import { Pool } from "pg"
-import { DcbEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { rawSqlProjection } from "./rawSqlProjection.js"
 import { ProjectionSpec } from "./projectionSpec.js"
 
-const event = (type: string, data: Record<string, unknown> = {}, tags: Tags = Tags.fromObj({ e: "1" })): DcbEvent => ({
-    type,
-    tags,
-    data,
-    metadata: {}
+const event = (
+    type: string,
+    data: Record<string, unknown> = {},
+    tags: Tags = Tags.fromObj({ e: "1" })
+): TaggedEvent<AnyEvent> => ({
+    event: { type, data } as AnyEvent,
+    tags
 })
 
 const counterProjection = rawSqlProjection({

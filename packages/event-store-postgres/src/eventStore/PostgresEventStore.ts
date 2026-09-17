@@ -1,7 +1,7 @@
 import { Pool, PoolClient, QueryResult } from "pg"
 import {
     EventStore,
-    DcbEvent,
+    TaggedEvent,
     AppendConditionError,
     AppendCommand,
     SequencedEvent,
@@ -315,7 +315,7 @@ export class PostgresEventStore implements EventStore {
         leafLockKeys: bigint[],
         intentLockKeys: bigint[],
         conditions: { cmdIdx: number; type: string; tags: string[]; afterPos: number }[],
-        eventIterator: () => Iterable<DcbEvent>
+        eventIterator: () => Iterable<TaggedEvent>
     ): Promise<SequencePosition> {
         return this.withTransaction(async client => {
             // Lock-then-allocate invariant: acquire leaf X + intent S BEFORE INSERT.
@@ -513,8 +513,8 @@ function buildAppendFunctionParams(
     }
 }
 
-function serializePayload(evt: DcbEvent): string {
-    return `{"data":${JSON.stringify(evt.data)},"metadata":${JSON.stringify(evt.metadata)}}`
+function serializePayload(evt: TaggedEvent): string {
+    return `{"data":${JSON.stringify(evt.event.data)},"metadata":${JSON.stringify(evt.event.metadata)}}`
 }
 
 function serializeCommands(commands: AppendCommand[]) {
@@ -532,12 +532,12 @@ function serializeCommands(commands: AppendCommand[]) {
     for (let i = 0; i < commands.length; i++) {
         const cmd = commands[i]
         for (const evt of ensureIsArray(cmd.events)) {
-            types.push(evt.type)
+            types.push(evt.event.type)
             tags.push(evt.tags.values.join(TAG_DELIMITER))
             payloads.push(serializePayload(evt))
             messageIds.push(evt.id ?? null)
             schemaVersions.push(evt.schemaVersion ?? null)
-            metadataJsonb.push(JSON.stringify(evt.metadata ?? {}))
+            metadataJsonb.push(JSON.stringify(evt.event.metadata ?? {}))
         }
         if (cmd.condition) {
             const afterPos = parseInt(cmd.condition.after?.toString() ?? "0")
@@ -591,7 +591,7 @@ function filterEventsByQuery(events: SequencedEvent[], query: Query): SequencedE
         for (const item of query.items) {
             if (!item.types.includes(se.event.type)) continue
             if (item.tags) {
-                const eventTagValues = se.event.tags.values
+                const eventTagValues = se.tags.values
                 if (!item.tags.values.every(t => eventTagValues.includes(t))) continue
             }
             return true
