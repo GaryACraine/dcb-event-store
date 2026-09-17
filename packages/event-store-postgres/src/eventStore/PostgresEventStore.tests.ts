@@ -814,8 +814,9 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const after = new Date()
             const [se] = await streamAllEventsToArray(store.read(Query.all()))
             expect(se.recordedAt).toBeInstanceOf(Date)
-            expect(se.recordedAt.getTime()).toBeGreaterThanOrEqual(before.getTime())
-            expect(se.recordedAt.getTime()).toBeLessThanOrEqual(after.getTime())
+            // Allow 5ms tolerance for clock skew between Node.js and Postgres server
+            expect(se.recordedAt.getTime()).toBeGreaterThanOrEqual(before.getTime() - 5)
+            expect(se.recordedAt.getTime()).toBeLessThanOrEqual(after.getTime() + 5)
         })
 
         test("schemaVersion defaults to '1' when not provided", async () => {
