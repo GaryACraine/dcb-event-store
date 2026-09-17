@@ -948,6 +948,30 @@ data; projections are independently testable with no cross-projection waits.
 
 ---
 
+## 11b. Phase 12 — Command type standardization
+
+**Goal.** Update `DcbCommand` in `@dcb-es/event-store` to adopt standard command typing (matching Emmett's command typing structure). This includes defining `DcbCommand` with `Readonly<...>`, optional `metadata` (defaulting to `{ now: Date }`), optional nominal `kind?: 'Command'`, helper types (`CommandTypeOf`, `CommandDataOf`, `CommandMetaDataOf`), and providing the `command(...)` builder factory function.
+
+**Package affected.** `@dcb-es/event-store`
+
+| Phase | Description |
+|---|---|
+| 12 | Standardize `DcbCommand` definition, metadata support, and helper functions |
+
+### 12.1 Changes to `DcbCommand.ts`
+
+- Redefine `DcbCommand` type with optional `metadata` property and `Readonly` constraint.
+- Add utility types `CommandTypeOf<T>`, `CommandDataOf<T>`, and `CommandMetaDataOf<T>`.
+- Add `command(...)` factory function for creating typed command instances with automatic inference.
+- Re-export factory function and utility types from `packages/event-store/index.ts`.
+
+### 12.2 Compatibility & Verification
+
+- Ensure `Decider`, `deciderSpecification`, and existing examples/tests compiled against `DcbCommand` continue to work without breaking changes.
+- Add tests in `packages/event-store` specifically for `DcbCommand`, helper types, and the `command(...)` builder function.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -969,6 +993,7 @@ data; projections are independently testable with no cross-projection waits.
 | 10.7 | `phase-10.7/validation-openapi` | complete | N/A (no append/read/lock changes) |
 | 10.2 | `phase-10.2/etag-semantics` | skipped — out of scope | N/A |
 | 11 | `phase-11/web-api-sliced` | in progress | N/A (no append/read/lock changes) |
+| 12 | `phase-12/command-type-standard` | complete | N/A (pure core type and utility update) |
 
 ## 13. Known issues
 

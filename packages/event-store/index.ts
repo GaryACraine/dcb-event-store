@@ -9,7 +9,16 @@ export {
     validateAppendCondition
 } from "./src/eventStore/EventStore.js"
 export { AppendConditionError } from "./src/eventStore/AppendConditionError.js"
-export { DcbCommand } from "./src/eventStore/DcbCommand.js"
+export {
+    DcbCommand,
+    AnyCommand,
+    CommandTypeOf,
+    CommandDataOf,
+    CommandMetaDataOf,
+    DefaultCommandMetadata,
+    CreateCommandType,
+    command
+} from "./src/eventStore/DcbCommand.js"
 export { DcbError, NotFoundError, ValidationError, IllegalStateError } from "./src/eventStore/errors.js"
 
 export { Query, QueryItem } from "./src/eventStore/Query.js"
