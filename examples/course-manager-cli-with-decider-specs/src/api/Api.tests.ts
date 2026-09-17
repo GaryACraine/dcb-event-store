@@ -84,7 +84,7 @@ describe("updateCourseTitle", () => {
         await DeciderSpecification.for(updateCourseTitle)
             .given(courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 }))
             .when({ type: "updateCourseTitle", data: { courseId: "c1", newTitle: "Advanced Math" } })
-            .then(new courseTitleWasChanged({ courseId: "c1", newTitle: "Advanced Math" }))
+            .then(courseTitleWasChanged({ courseId: "c1", newTitle: "Advanced Math" }))
     })
 
     test("given course does not exist, throws NotFoundError", async () => {
