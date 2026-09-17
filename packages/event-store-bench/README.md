@@ -2,6 +2,63 @@
 
 Stress test and benchmark suite for all event store adapters.
 
+## Purpose
+
+This package serves two distinct roles:
+
+**1. Proving DCB consistency under concurrency.** One of the key concerns
+about the Dynamic Consistency Boundary pattern is whether the boundary
+actually holds when multiple writers race on overlapping scopes. Several
+scenarios in this suite are designed as **correctness proofs** — they set up
+concurrent writers that deliberately create race conditions, then assert
+hard invariants (zero duplicate entities, event counts matching successful
+appends, no phantom writes). If the advisory lock strategy, the
+`dcb_append` stored procedure, or the read barrier ever regress, these
+tests catch it.
+
+**2. Measuring throughput and latency.** The remaining scenarios are
+conventional performance benchmarks — peak write speed, scaling factors,
+batch size tuning, COPY path crossover points, and degradation as the
+event table grows.
+
+### Correctness scenarios (DCB boundary proofs)
+
+These scenarios assert **data invariants**, not just performance metrics.
+They are the evidence that DCB works under concurrent load:
+
+| Scenario | What it proves |
+|---|---|
+| **consistency-oracle** | Multiple workers race to create a finite pool of entities via check-then-write. Asserts **zero duplicate creates** — the core DCB invariant. |
+| **overlap-consistency** | Same race, but events carry extra tags beyond the condition query scope. Proves conditions hold even when the event's tag set is wider than the boundary. |
+| **contention** | All workers write to a single shared scope (maximum advisory lock contention). Asserts the stored event count matches exactly the number of successful appends — no phantom or lost writes. |
+| **bulk-import** | Single large `append(commands[])` with per-entity conditions. Asserts no duplicate entity creates or serial numbers in the resulting event stream. |
+| **parallel-import** | Concurrent batch appends with non-overlapping entity ranges. Asserts no duplicates when multiple transactions run conditions in parallel. |
+| **meter-upsert** | End-to-end read-decide-write cycle: reads all state, decides which entities to create, batch upserts with `AppendCondition.after` at the read position. Asserts all meters alive with correct create counts. |
+| **mixed-workload** | Bulk import runs alongside conditional writers on different scopes. Asserts import completeness and zero errors on the concurrent writers — no cross-contamination at the lock level. |
+
+### Performance scenarios (throughput and latency)
+
+These scenarios have no meaningful data correctness assertions — they measure
+ev/sec, latency percentiles, and scaling ratios:
+
+| Scenario | What it measures |
+|---|---|
+| **throughput-scaling** | Linear scaling factor from 1 to N isolated writers |
+| **raw-throughput** | Peak unconditional write speed with no conditions |
+| **esb-compat** | Write and read ops/sec at different concurrency tiers |
+| **batch-sweep** | Optimal batch size for unconditional and conditional appends |
+| **degradation** | Per-phase throughput as the event table grows |
+| **batch-commands** | Throughput of N-commands-per-append with per-entity conditions |
+| **copy-threshold** | COPY path crossover tuning (pg-local only) |
+| **copy-crossover** | COPY vs stored procedure head-to-head (pg-local only) |
+
+### Required regression tests
+
+The project's `CLAUDE.md` (invariant 1) requires that any change to the lock
+strategy, advisory locks, or `dcb_append` must be accompanied by passing
+`contention` and `overlap-consistency` scenarios with bench numbers recorded
+in the PR.
+
 ## Architecture
 
 ```
