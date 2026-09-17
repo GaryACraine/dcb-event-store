@@ -1,6 +1,6 @@
-import { DcbEvent, EventStore } from "../eventStore/EventStore.js"
+import { TaggedEvent, EventStore } from "../eventStore/EventStore.js"
 import { SequencePosition } from "../eventStore/SequencePosition.js"
-import { DcbCommand } from "../eventStore/DcbCommand.js"
+import { Command } from "../eventStore/Command.js"
 import { EventHandlers, EventHandlerStates, buildDecisionModel } from "./buildDecisionModel.js"
 import { ensureIsArray } from "../ensureIsArray.js"
 import { v5 as uuidv5 } from "uuid"
@@ -8,23 +8,23 @@ import { v5 as uuidv5 } from "uuid"
 // Fixed namespace UUID for deterministic multi-event idempotency key derivation
 const IDEMPOTENCY_NAMESPACE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
-export interface Decider<TCommand extends DcbCommand, THandlers extends EventHandlers> {
+export interface Decider<TCommand extends Command, THandlers extends EventHandlers> {
     handlers: (command: TCommand) => THandlers
-    decide: (command: TCommand, state: EventHandlerStates<THandlers>) => DcbEvent | DcbEvent[]
+    decide: (command: TCommand, state: EventHandlerStates<THandlers>) => TaggedEvent | TaggedEvent[]
 }
 
 export interface HandleOptions {
     idempotencyKey?: string
 }
 
-export function decider<TCommand extends DcbCommand, THandlers extends EventHandlers>(d: {
+export function decider<TCommand extends Command, THandlers extends EventHandlers>(d: {
     handlers: (command: TCommand) => THandlers
-    decide: (command: TCommand, state: EventHandlerStates<THandlers>) => DcbEvent | DcbEvent[]
+    decide: (command: TCommand, state: EventHandlerStates<THandlers>) => TaggedEvent | TaggedEvent[]
 }): Decider<TCommand, THandlers> {
     return d
 }
 
-export async function handle<TCommand extends DcbCommand, THandlers extends EventHandlers>(
+export async function handle<TCommand extends Command, THandlers extends EventHandlers>(
     eventStore: EventStore,
     d: Decider<TCommand, THandlers>,
     command: TCommand,

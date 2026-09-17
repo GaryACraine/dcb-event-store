@@ -1,6 +1,6 @@
-import { DcbCommand } from "@dcb-es/event-store"
+import { Command } from "@dcb-es/event-store"
 
-export type UnsubscribeStudentFromCourse = DcbCommand<
+export type UnsubscribeStudentFromCourse = Command<
     "unsubscribeStudentFromCourse",
     { courseId: string; studentId: string }
 >

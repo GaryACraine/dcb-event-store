@@ -5,7 +5,7 @@ The repository includes CLI applications that implement the [course subscription
 | Example | Reads from | Key concepts |
 |---------|-----------|--------------|
 | `course-manager-cli` | Event stream (on-the-fly) | Core DCB pattern, decision models, command handling |
-| `course-manager-cli-with-decider-specs` | In-memory (no Postgres) | `Decider` type, `DcbCommand`, `DeciderSpecification`, typed domain errors |
+| `course-manager-cli-with-decider-specs` | In-memory (no Postgres) | `Decider` type, `Command`, `DeciderSpecification`, typed domain errors |
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 | `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
@@ -204,11 +204,11 @@ Note that idempotency operates at the **store level**, not the application level
 
 **Location:** [`examples/course-manager-cli-with-decider-specs/`](../examples/course-manager-cli-with-decider-specs/)
 
-This example refactors the basic CLI to use the `Decider` pattern with typed commands (`DcbCommand`) and replaces the ad-hoc tests with `DeciderSpecification` -- a fluent given/when/then API that exercises each decider against a `MemoryEventStore`, asserting both the emitted events and the consistency boundary. Tests run entirely in-memory; no PostgreSQL or Docker required.
+This example refactors the basic CLI to use the `Decider` pattern with typed commands (`Command`) and replaces the ad-hoc tests with `DeciderSpecification` -- a fluent given/when/then API that exercises each decider against a `MemoryEventStore`, asserting both the emitted events and the consistency boundary. Tests run entirely in-memory; no PostgreSQL or Docker required.
 
 ### What it adds
 
-- **Typed commands** (`Commands.ts`) -- six `DcbCommand` type aliases replacing untyped parameter bags
+- **Typed commands** (`Commands.ts`) -- six `Command` type aliases replacing untyped parameter bags
 - **Decider objects** (`Deciders.ts`) -- the six command handlers expressed as `Decider` values using the `decider()` factory, with the existing `DecisionModels.ts` handler factories
 - **Typed domain errors** -- `IllegalStateError`, `NotFoundError`, and `ValidationError` replace bare `new Error(...)` in decide functions
 - **`DeciderSpecification` tests** (`Api.tests.ts`) -- given/when/then tests for every command, including error state assertions and `.thenCondition()` boundary assertions
@@ -216,11 +216,11 @@ This example refactors the basic CLI to use the `Decider` pattern with typed com
 
 ### Typed commands
 
-Each command is a plain type alias using `DcbCommand<Type, Data>`, mirroring how events use `DcbEvent`:
+Each command is a plain type alias using `Command<Type, Data>`, mirroring how events use `DcbEvent`:
 
 ```typescript
-type RegisterCourse = DcbCommand<"registerCourse", { id: string; title: string; capacity: number }>
-type SubscribeStudentToCourse = DcbCommand<"subscribeStudentToCourse", { courseId: string; studentId: string }>
+type RegisterCourse = Command<"registerCourse", { id: string; title: string; capacity: number }>
+type SubscribeStudentToCourse = Command<"subscribeStudentToCourse", { courseId: string; studentId: string }>
 ```
 
 Commands are constructed as object literals -- no classes, no `new` keyword:
@@ -272,7 +272,7 @@ Event comparison ignores store-generated fields (`id`, `recordedAt`, `schemaVers
 
 | Aspect | Basic example | Decider specs example |
 |--------|--------------|----------------------|
-| Command types | Untyped parameter bags (`{ id, title, capacity }`) | `DcbCommand<Type, Data>` type aliases |
+| Command types | Untyped parameter bags (`{ id, title, capacity }`) | `Command<Type, Data>` type aliases |
 | Command handling | Inline `buildDecisionModel` + validate + append | `Decider` object + `handle()` |
 | Error types | Bare `new Error(message)` | `IllegalStateError`, `NotFoundError`, `ValidationError` |
 | Tests | Integration tests against PostgresEventStore (Docker required) | `DeciderSpecification` against `MemoryEventStore` (no Docker) |

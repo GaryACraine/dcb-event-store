@@ -972,6 +972,41 @@ data; projections are independently testable with no cross-projection waits.
 
 ---
 
+## 11c. Phase 13 — Event type standardization (Emmett adoption analysis)
+
+**Goal.** Analyze and plan the adoption of the `Event` type structure from Emmett (`../emmett/src/packages/emmett/src/typing/event.ts`) into DCB's `packages/event-store/src/eventStore/EventStore.ts`, aligning event typing with the command typing introduced in Phase 12.
+
+**Analysis of Emmett's `Event` type:**
+Emmett defines `Event<Type, Data, MetaData>` as a strongly-typed discriminated union that conditionally enforces `metadata` only when explicitly specified. It also provides helper types (`EventTypeOf`, `EventDataOf`, `EventMetaDataOf`) and an `event(...)` factory builder. It strictly separates the domain event payload from storage-specific metadata.
+
+**Current `DcbEvent` vs Emmett `Event`:**
+- `DcbEvent` (current): `interface DcbEvent<Tpe, Tgs, Dta, Mtdta>`. It directly intertwines the domain payload (`type`, `data`) with store-level concerns (`id?`, `schemaVersion?`) and DCB's core grouping mechanism (`tags`).
+- `Event` (Emmett): Pure domain payload (`type`, `data`, optional `metadata`), excluding any structural infrastructure.
+
+**Concept Mapping and Compatibility (DCB vs Emmett):**
+When mapping Emmett's concepts to DCB, we observe close alignment on global ordering but a fundamental divergence on local grouping:
+- **Global Ordering:** DCB's `SequencePosition` is **exactly analogous** to Emmett's `GlobalPosition`. Both represent the absolute, monotonic, global insertion order of events into the store.
+- **Stream vs Tag Boundaries:** Emmett operates on an aggregate stream model, utilizing a `StreamPosition` (stream-local sequence). DCB deliberately eschews streams in favor of overlapping `Tags` boundaries, and therefore has no equivalent to `StreamPosition`. 
+- **Feasibility:** We can safely and fully adopt the write-side `Event`, helper types, and the `event()` factory builder. For read-side types, we will adapt Emmett's `ReadEvent` / `RecordedMessage` structures by utilizing our `SequencePosition` (in place of `GlobalPosition`) and entirely omitting `StreamPosition`.
+
+**Benefits of Adoption:**
+1. **Consistency:** Perfectly aligns DCB's event definitions with `DcbCommand` (Phase 12) and the broader Emmett ecosystem types.
+2. **Type Safety:** Brings structural improvements like `Readonly`, conditional type checking for `metadata`, and a nominal `kind?: 'Event'` discriminant.
+3. **Developer Experience:** The `event()` factory builder eliminates boilerplate when constructing domain events in deciders and tests.
+
+**Impact and Full Dependency Graph Considerations:**
+- **Widespread Impact:** `DcbEvent` is the central primitive. Changes will affect `EventStore.append`, `SequencedEvent`, `Decider`, `buildDecisionModel`, `EventHandler`, `Query`, and all existing projection and read-model handlers.
+- **Migration & Deprecation:** While we will aggressively update all internal dependencies and example projects (`examples/*`) to use the new `Event` type structure, the original `DcbEvent` will **not** be deleted. Instead, it will be clearly marked with `@deprecated` so the TypeScript compiler can flag any lingering or future external usage without immediately breaking user code.
+- **Handling Tags for Writes:** Because DCB relies intrinsically on `tags` for its consistency boundaries, we cannot simply drop `tags` from the append payload. We will introduce a DCB-specific envelope type (e.g., `TaggedEvent<E extends Event>`) for appends, or adjust the `append` signature to accept an array of `{ event: Event, tags: Tags }`.
+- **`SequencedEvent` Adaptation:** `SequencedEvent` will morph into DCB's analog of Emmett's `ReadEvent`, marrying the pure domain `Event` with `tags`, `SequencePosition`, `message_id`, and `recorded_at`.
+
+**Testing and Regression Guardrails:**
+Modifying the core event primitive poses a high risk to the serialization/deserialization and lock boundary matching systems.
+- **Unit & Integration:** All `MemoryEventStore` and `PostgresEventStore` specs will be updated. Once updated, they must remain entirely green.
+- **Scenarios:** The `event-store-bench` workspace acts as our regression oracle. The scenarios (`overlap-consistency`, `throughput-scaling`, `batch-sweep-conditional`) inherently stress-test tag boundaries, appending, reading, and lock correctness under high concurrency. These must pass to verify the new type structures introduce zero behavioral or performance regressions to the Postgres infrastructure.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -994,6 +1029,7 @@ data; projections are independently testable with no cross-projection waits.
 | 10.2 | `phase-10.2/etag-semantics` | skipped — out of scope | N/A |
 | 11 | `phase-11/web-api-sliced` | in progress | N/A (no append/read/lock changes) |
 | 12 | `phase-12/command-type-standard` | complete | N/A (pure core type and utility update) |
+| 13 | `phase-13/event-type-standardization` | complete | N/A (pure type-level change, no append/read/lock changes) |
 
 ## 13. Known issues
 

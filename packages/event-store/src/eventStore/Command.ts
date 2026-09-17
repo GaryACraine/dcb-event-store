@@ -1,11 +1,11 @@
-export type DefaultRecord<T = unknown> = Record<string, T>
+import { DefaultRecord } from "./types.js"
 
 export type DefaultCommandMetadata = { now: Date }
 
-export type DcbCommand<
+export type Command<
     CommandType extends string = string,
     CommandData = unknown,
-    CommandMetaData extends Record<string, unknown> | undefined = undefined
+    CommandMetaData extends DefaultRecord | undefined = undefined
 > = Readonly<
     CommandMetaData extends undefined
         ? {
@@ -21,11 +21,11 @@ export type DcbCommand<
 > & { readonly kind?: "Command" }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyCommand = DcbCommand<string, any, any>
+export type AnyCommand = Command<string, any, any>
 
-export type CommandTypeOf<T extends DcbCommand> = T["type"]
-export type CommandDataOf<T extends DcbCommand> = T["data"]
-export type CommandMetaDataOf<T extends DcbCommand> = T extends {
+export type CommandTypeOf<T extends Command> = T["type"]
+export type CommandDataOf<T extends Command> = T["data"]
+export type CommandMetaDataOf<T extends Command> = T extends {
     metadata: infer M
 }
     ? M
@@ -34,7 +34,7 @@ export type CommandMetaDataOf<T extends DcbCommand> = T extends {
 export type CreateCommandType<
     CommandType extends string,
     CommandData,
-    CommandMetaData extends Record<string, unknown> | undefined = undefined
+    CommandMetaData extends DefaultRecord | undefined = undefined
 > = Readonly<
     CommandMetaData extends undefined
         ? {
@@ -50,7 +50,7 @@ export type CreateCommandType<
 > & { readonly kind?: "Command" }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const command = <CommandType extends DcbCommand<string, any, any>>(
+export const command = <CommandType extends Command<string, any, any>>(
     ...args: CommandMetaDataOf<CommandType> extends undefined
         ? [
               type: CommandTypeOf<CommandType>,

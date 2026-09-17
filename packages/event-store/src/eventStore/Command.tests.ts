@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest"
 import {
-    DcbCommand,
+    Command,
     AnyCommand,
     CommandTypeOf,
     CommandDataOf,
     CommandMetaDataOf,
     DefaultCommandMetadata,
     command
-} from "./DcbCommand.js"
+} from "./Command.js"
 
-describe("DcbCommand", () => {
-    type RegisterCourse = DcbCommand<"registerCourse", { id: string; capacity: number }>
-    type ChangeCourseCapacity = DcbCommand<
+describe("Command", () => {
+    type RegisterCourse = Command<"registerCourse", { id: string; capacity: number }>
+    type ChangeCourseCapacity = Command<
         "changeCourseCapacity",
         { courseId: string; newCapacity: number },
         { userId: string } & DefaultCommandMetadata
