@@ -33,6 +33,9 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 - **DcbCommand** — typed command interface mirroring `DcbEvent` but without
   tags: `DcbCommand<Type, Data>`. Commands are plain type aliases and object
   literals, not classes.
+  *Note:* As of Phase 12, we adopted Emmett's object outlining for commands (`Command` type structure from `../emmett/src/packages/emmett/src/typing/command.ts`).
+  *Benefits:* Provides standardization, improved type-safe inference via utility types (`CommandTypeOf`, `CommandDataOf`, `CommandMetaDataOf`), and a factory builder (`command()`) for streamlined instantiation.
+  *Impact:* Minimal to zero refactoring required downstream because existing object literal assignments remain fully supported, ensuring complete backwards compatibility with existing example slices and test specifications.
 - **Decider** — formalises the command-handling pattern: `handlers(cmd)`
   returns the `EventHandlerWithState` map, `decide(cmd, state)` produces
   events or throws. The `decider()` factory infers handler types; `handle()`

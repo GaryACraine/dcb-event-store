@@ -1,63 +1,78 @@
 {
-  "name": "dcb-event-store",
-  "type": "module",
-  "private": true,
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kraken-tech/dcb-event-store.git"
-  },
-  "license": "BSD-3-Clause",
-  "scripts": {
-    "test": "pnpm -r run test",
-    "build": "pnpm -r run build",
-    "watch": "pnpm -r run watch",
-    "lint": "pnpm -r run lint",
-    "lint-fix": "pnpm -r run lint-fix",
-    "clean": "pnpm -r exec rm -rf dist",
-    "changeset": "changeset",
-    "version-packages": "changeset version",
-    "release": "changeset version && pnpm install && pnpm run clean && pnpm run build && pnpm run lint && pnpm run test && cp README.md packages/event-store/ && cp README.md packages/event-store-postgres/ && CHANGESET_PUBLISH=1 changeset publish",
-    "prepare": "husky"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.30.0",
-    "@eslint/js": "^9.39.0",
-    "@types/pg": "8.20.0",
-    "@types/uuid": "^9.0.8",
-    "@typescript-eslint/eslint-plugin": "^8.23.0",
-    "@typescript-eslint/parser": "^8.23.0",
-    "eslint": "^9.39.0",
-    "eslint-config-prettier": "^10.0.1",
-    "eslint-plugin-prettier": "^5.2.3",
-    "globals": "^17.5.0",
-    "husky": "^9.1.7",
-    "prettier": "^3.4.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.7.3",
-    "typescript-eslint": "^8.23.0",
-    "uuid": "^9.0.1",
-    "vitest": "^3.2.4"
-  },
-  "pnpm": {
-    "overrides": {
-      "handlebars": "4.7.9",
-      "lodash": "4.18.1",
-      "minimatch@<=3.1.3": "3.1.5",
-      "minimatch@>=9.0.0 <9.0.7": "9.0.9",
-      "js-yaml": "4.1.1",
-      "read-yaml-file>js-yaml": "^3.14.1",
-      "tar-fs": "3.1.2",
-      "picomatch@<2.3.2": "2.3.2",
-      "brace-expansion@<1.1.13": "1.1.13",
-      "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
-      "yaml": "2.8.3",
-      "tar": "7.5.11",
-      "@types/node": "^25.6.0"
+    "name": "dcb-event-store",
+    "type": "module",
+    "private": true,
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kraken-tech/dcb-event-store.git"
     },
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "ssh2"
-    ]
-  },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+    "license": "BSD-3-Clause",
+    "scripts": {
+        "test": "pnpm -r run test",
+        "build": "pnpm -r run build",
+        "watch": "pnpm -r run watch",
+        "lint": "pnpm -r run lint",
+        "lint-fix": "pnpm -r run lint-fix",
+        "clean": "pnpm -r exec rm -rf dist",
+        "changeset": "changeset",
+        "version-packages": "changeset version",
+        "release": "changeset version && pnpm install && pnpm run clean && pnpm run build && pnpm run lint && pnpm run test && cp README.md packages/event-store/ && cp README.md packages/event-store-postgres/ && CHANGESET_PUBLISH=1 changeset publish",
+        "prepare": "husky",
+        "// --- MODEL RUNNERS ---": "Launch Ollama models in interactive CLI mode",
+        "ollama:32b": "ollama run qwen2.5-coder:32b-instruct-q8_0",
+        "ollama:32b:fast": "ollama run qwen2.5-coder:32b",
+        "ollama:14b": "ollama run qwen2.5-coder:14b",
+        "ollama:r1": "ollama run deepseek-r1:32b",
+        "// --- MEMORY & PROCESS MANAGEMENT ---": "Monitor and control Ollama VRAM allocation",
+        "ollama:ps": "ollama ps",
+        "ollama:stop": "ollama stop qwen2.5-coder:32b-instruct-q8_0",
+        "ollama:stop:all": "ollama ps | awk 'NR>1 {print $1}' | xargs -I {} ollama stop {}",
+        "ollama:list": "ollama list",
+        "ollama:serve": "ollama serve",
+        "// --- PI HARNESS INTEGRATIONS ---": "Run Pi terminal agent attached to local or cloud models",
+        "pi:32b": "pi --model ollama/qwen2.5-coder:32b-instruct-q8_0",
+        "pi:14b": "pi --model ollama/qwen2.5-coder:14b",
+        "pi:gemini": "pi --model google/gemini-2.5-flash"
+    },
+    "devDependencies": {
+        "@changesets/cli": "^2.30.0",
+        "@eslint/js": "^9.39.0",
+        "@types/pg": "8.20.0",
+        "@types/uuid": "^9.0.8",
+        "@typescript-eslint/eslint-plugin": "^8.23.0",
+        "@typescript-eslint/parser": "^8.23.0",
+        "eslint": "^9.39.0",
+        "eslint-config-prettier": "^10.0.1",
+        "eslint-plugin-prettier": "^5.2.3",
+        "globals": "^17.5.0",
+        "husky": "^9.1.7",
+        "prettier": "^3.4.2",
+        "ts-node": "^10.9.2",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.23.0",
+        "uuid": "^9.0.1",
+        "vitest": "^3.2.4"
+    },
+    "pnpm": {
+        "overrides": {
+            "handlebars": "4.7.9",
+            "lodash": "4.18.1",
+            "minimatch@<=3.1.3": "3.1.5",
+            "minimatch@>=9.0.0 <9.0.7": "9.0.9",
+            "js-yaml": "4.1.1",
+            "read-yaml-file>js-yaml": "^3.14.1",
+            "tar-fs": "3.1.2",
+            "picomatch@<2.3.2": "2.3.2",
+            "brace-expansion@<1.1.13": "1.1.13",
+            "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
+            "yaml": "2.8.3",
+            "tar": "7.5.11",
+            "@types/node": "^25.6.0"
+        },
+        "onlyBuiltDependencies": [
+            "esbuild",
+            "ssh2"
+        ]
+    },
+    "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
 }
