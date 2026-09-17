@@ -1,4 +1,4 @@
-import { AppendCommand, DcbEvent, Tags, Query, SequencePosition } from "@dcb-es/event-store"
+import { AppendCommand, TaggedEvent, Tags, Query, SequencePosition } from "@dcb-es/event-store"
 
 export const EVENTS_PER_METER = 11
 
@@ -23,10 +23,8 @@ export function buildMeterCommands(meterStart: number, meterEnd: number): Append
 
         commands.push({
             events: [{
-                type: "MeterCreated",
+                event: { type: "MeterCreated", data: { meterId, serialNumber } },
                 tags: Tags.fromObj({ meterId }),
-                data: { meterId, serialNumber },
-                metadata: {},
             }],
             condition: {
                 failIfEventsMatch: Query.fromItems([
@@ -38,10 +36,8 @@ export function buildMeterCommands(meterStart: number, meterEnd: number): Append
 
         commands.push({
             events: [{
-                type: "SerialNumberSet",
+                event: { type: "SerialNumberSet", data: { meterId, serialNumber } },
                 tags: Tags.fromObj({ meterId, serialNumber }),
-                data: { meterId, serialNumber },
-                metadata: {},
             }],
             condition: {
                 failIfEventsMatch: Query.fromItems([
@@ -51,13 +47,11 @@ export function buildMeterCommands(meterStart: number, meterEnd: number): Append
             },
         })
 
-        const fieldEvents: DcbEvent[] = METER_FIELD_EVENTS.map(type => ({
-            type,
+        const fieldEvents: TaggedEvent[] = METER_FIELD_EVENTS.map(type => ({
+            event: { type, data: { meterId, serialNumber, field: type } },
             tags: Tags.fromObj(
                 type === "InitialReadingSet" ? { meterId, serialNumber } : { meterId },
             ),
-            data: { meterId, serialNumber, field: type },
-            metadata: {},
         }))
 
         commands.push({ events: fieldEvents })

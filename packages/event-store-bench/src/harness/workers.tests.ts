@@ -7,10 +7,8 @@ describe("conditionalRetryWorker", () => {
         const store = new MemoryEventStore()
         const query = Query.fromItems([{ types: ["TestEvent"], tags: Tags.fromObj({ scope: "W0" }) }])
         const events = () => [{
-            type: "TestEvent",
+            event: { type: "TestEvent", data: {} },
             tags: Tags.fromObj({ scope: "W0" }),
-            data: {},
-            metadata: {},
         }]
 
         const result = await conditionalRetryWorker(store, 0, Date.now() + 1000, query, events)
@@ -28,10 +26,8 @@ describe("entityOracleWorker", () => {
             tags: Tags.fromObj({ entity: `E${idx}` }),
         }])
         const eventFactory = (_wid: number, idx: number) => [{
-            type: "Created",
+            event: { type: "Created", data: {} },
             tags: Tags.fromObj({ entity: `E${idx}` }),
-            data: {},
-            metadata: {},
         }]
 
         const result = await entityOracleWorker(store, 0, Date.now() + 1000, {

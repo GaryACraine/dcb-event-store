@@ -97,7 +97,7 @@ async function verify(
 
     const serials = all
         .filter(se => se.event.type === "SerialNumberSet")
-        .map(se => se.event.tags.values.find(t => t.startsWith("serialNumber=")))
+        .map(se => se.tags.values.find(t => t.startsWith("serialNumber=")))
     const uniqueSerials = new Set(serials)
     checks.push({
         name: "no-duplicate-serials",

@@ -33,10 +33,8 @@ async function batchCommandWorker(
             const entityId = `W${workerId}-E${seq++}`
             return {
                 events: [{
-                    type: "EntityCreated",
+                    event: { type: "EntityCreated", data: { workerId, seq: seq - 1 } },
                     tags: Tags.fromObj({ entity: entityId }),
-                    data: { workerId, seq: seq - 1 },
-                    metadata: {},
                 }],
                 condition: {
                     failIfEventsMatch: Query.fromItems([{

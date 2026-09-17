@@ -27,10 +27,8 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
     for (let offset = 0; offset < metersToCreate; offset += BATCH) {
         const size = Math.min(BATCH, metersToCreate - offset)
         const events = Array.from({ length: size }, (_, i) => ({
-            type: "MeterCreated",
+            event: { type: "MeterCreated", data: { serial: offset + i } },
             tags: Tags.fromObj({ serial: `M${offset + i}` }),
-            data: { serial: offset + i },
-            metadata: {},
         }))
         await store.append({ events })
     }
@@ -40,10 +38,8 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
         const events = Array.from({ length: size }, (_, i) => {
             const idx = existingCount + offset + i
             return {
-                type: "MeterDeleted",
+                event: { type: "MeterDeleted", data: { serial: idx } },
                 tags: Tags.fromObj({ serial: `M${idx}` }),
-                data: { serial: idx },
-                metadata: {},
             }
         })
         await store.append({ events })
@@ -59,7 +55,7 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
 
     const meterState = new Map<string, "alive" | "deleted">()
     for (const evt of allEvents) {
-        const serial = evt.event.tags.values.find(t => t.startsWith("serial="))
+        const serial = evt.tags.values.find(t => t.startsWith("serial="))
         if (!serial) continue
         if (evt.event.type === "MeterCreated") meterState.set(serial, "alive")
         else if (evt.event.type === "MeterDeleted") meterState.set(serial, "deleted")
@@ -79,10 +75,8 @@ async function run(factory: EventStoreFactory, config: Config): Promise<StressTe
         }
         return {
             events: {
-                type: "MeterCreated",
+                event: { type: "MeterCreated", data: { serial: idx } },
                 tags: Tags.fromObj({ serial }),
-                data: { serial: idx },
-                metadata: {},
             },
             condition,
         }
@@ -122,7 +116,7 @@ async function verify(store: EventStore, totalMeters: number): Promise<Verificat
 
     const state = new Map<string, "alive" | "deleted">()
     for (const evt of allEvents) {
-        const serial = evt.event.tags.values.find(t => t.startsWith("serial="))
+        const serial = evt.tags.values.find(t => t.startsWith("serial="))
         if (!serial) continue
         if (evt.event.type === "MeterCreated") state.set(serial, "alive")
         else if (evt.event.type === "MeterDeleted") state.set(serial, "deleted")
@@ -135,7 +129,7 @@ async function verify(store: EventStore, totalMeters: number): Promise<Verificat
     const createdCounts = new Map<string, number>()
     for (const evt of allEvents) {
         if (evt.event.type !== "MeterCreated") continue
-        const serial = evt.event.tags.values.find(t => t.startsWith("serial="))
+        const serial = evt.tags.values.find(t => t.startsWith("serial="))
         if (!serial) continue
         createdCounts.set(serial, (createdCounts.get(serial) ?? 0) + 1)
     }

@@ -303,8 +303,6 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 7. **Poolers.** Advisory locks require session-mode connections. Do not add
    code paths that assume a transaction-mode pooler (PgBouncer, Supavisor,
    RDS Proxy) unless using `rowLocks()`.
-8. **Do not touch `packages/event-store-bench` scenarios** except to add new
-   ones. Existing scenarios are the regression baseline.
 
 ## Branching rules — mandatory
 

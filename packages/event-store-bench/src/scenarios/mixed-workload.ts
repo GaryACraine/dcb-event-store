@@ -1,7 +1,7 @@
 import {
     EventStore,
     AppendConditionError,
-    DcbEvent,
+    TaggedEvent,
     Tags,
     Query,
     SequencePosition,
@@ -21,15 +21,13 @@ interface Config {
     durationMs: number
 }
 
-function importBatch(_workerId: number, batchIndex: number, batchSize: number): DcbEvent[] {
-    const events: DcbEvent[] = []
+function importBatch(_workerId: number, batchIndex: number, batchSize: number): TaggedEvent[] {
+    const events: TaggedEvent[] = []
     const start = batchIndex * batchSize
     for (let i = 0; i < batchSize; i++) {
         events.push({
-            type: "MeterCreated",
+            event: { type: "MeterCreated", data: { meterIndex: start + i + 1 } },
             tags: Tags.fromObj({ meter: `A${start + i + 1}` }),
-            data: { meterIndex: start + i + 1 },
-            metadata: {},
         })
     }
     return events
@@ -92,11 +90,9 @@ async function runSmallWriter(
                 lastPosition = latest?.position ?? SequencePosition.initial()
             }
 
-            const events: DcbEvent[] = [{
-                type: "OrderPlaced",
+            const events: TaggedEvent[] = [{
+                event: { type: "OrderPlaced", data: { workerId, ts: Date.now() } },
                 tags: Tags.fromObj({ order: `B${workerId}` }),
-                data: { workerId, ts: Date.now() },
-                metadata: {},
             }]
 
             const opStart = Date.now()

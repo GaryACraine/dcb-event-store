@@ -1,4 +1,4 @@
-import { EventStore, Tags, Query, DcbEvent, streamAllEventsToArray } from "@dcb-es/event-store"
+import { EventStore, Tags, Query, TaggedEvent, streamAllEventsToArray } from "@dcb-es/event-store"
 import { EventStoreFactory, WorkerResult } from "../harness/types"
 import { buildScenarioResult } from "../harness/stats"
 import { conditionalRetryWorker, spawnWorkers } from "../harness/workers"
@@ -11,12 +11,10 @@ interface Config {
 
 const SHARED_QUERY = Query.fromItems([{ types: ["ThingCreated"], tags: Tags.fromObj({ thing: "CONTESTED" }) }])
 
-function events(_workerId: number): DcbEvent[] {
+function events(_workerId: number): TaggedEvent[] {
     return [{
-        type: "ThingCreated",
+        event: { type: "ThingCreated", data: { ts: Date.now() } },
         tags: Tags.fromObj({ thing: "CONTESTED" }),
-        data: { ts: Date.now() },
-        metadata: {},
     }]
 }
 

@@ -29,10 +29,8 @@ async function writeWorker(store: EventStore, workerId: number, endTime: number)
         try {
             await store.append({
                 events: {
-                    type: "BenchEvent",
+                    event: { type: "BenchEvent", data: { payload: PAYLOAD } },
                     tags: Tags.fromObj({ stream: streamId }),
-                    data: { payload: PAYLOAD },
-                    metadata: {},
                 },
             })
             result.latencies.push(Date.now() - opStart)
@@ -79,10 +77,8 @@ async function prepopulate(store: EventStore): Promise<void> {
         const events = Array.from({ length: size }, (_, i) => {
             const idx = offset + i
             return {
-                type: "BenchEvent",
+                event: { type: "BenchEvent", data: { payload: PAYLOAD } },
                 tags: Tags.fromObj({ stream: `P${idx % PREPOPULATE_STREAMS}` }),
-                data: { payload: PAYLOAD },
-                metadata: {},
             }
         })
         await store.append({ events })
