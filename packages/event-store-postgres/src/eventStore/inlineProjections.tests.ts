@@ -12,7 +12,7 @@ const event = (type: string, tags: Tags, data: unknown = {}): TaggedEvent<AnyEve
 /** Creates a trivial SQL projection that inserts into a tracking table. */
 function trackingProjection(
     name: string,
-    canHandle: Query,
+    canHandle: string[],
     trackingTable = "inline_proj_log"
 ): Projection & { received: SequencedEvent[][] } {
     const received: SequencedEvent[][] = []
@@ -58,7 +58,7 @@ describe("Inline Projections", () => {
 
     describe("function path (≤ copyThreshold events)", () => {
         test("inline projection sees appended events with correct SequencedEvent data", async () => {
-            const projection = trackingProjection("test-proj", Query.all())
+            const projection = trackingProjection("test-proj", [])
             const store = new PostgresEventStore({ pool, inlineProjections: [projection] })
             await store.ensureInstalled()
 
@@ -106,7 +106,7 @@ describe("Inline Projections", () => {
         test("throw in projection rolls back events and projection writes", async () => {
             const failingProjection: Projection = {
                 name: "failing-proj",
-                canHandle: Query.all(),
+                canHandle: [],
                 handle: async () => {
                     throw new Error("Projection failed!")
                 }
@@ -134,7 +134,7 @@ describe("Inline Projections", () => {
 
             const projection: Projection = {
                 name: "order-proj",
-                canHandle: Query.all(),
+                canHandle: [],
                 handle: async () => {
                     callOrder.push("projection")
                 }
@@ -183,7 +183,7 @@ describe("Inline Projections", () => {
 
             const projection: Projection = {
                 name: "write-then-fail",
-                canHandle: Query.all(),
+                canHandle: [],
                 handle: async (events, ctx) => {
                     for (const se of events) {
                         await ctx.client.query("INSERT INTO hook_rollback_log (event_type) VALUES ($1)", [
@@ -222,16 +222,8 @@ describe("Inline Projections", () => {
         })
 
         test("inline projection filters by canHandle query", async () => {
-            const orderProjection = trackingProjection(
-                "order-proj",
-                Query.fromItems([{ types: ["OrderPlaced", "OrderShipped"] }]),
-                "order_proj_log"
-            )
-            const paymentProjection = trackingProjection(
-                "payment-proj",
-                Query.fromItems([{ types: ["PaymentReceived"] }]),
-                "payment_proj_log"
-            )
+            const orderProjection = trackingProjection("order-proj", ["OrderPlaced", "OrderShipped"], "order_proj_log")
+            const paymentProjection = trackingProjection("payment-proj", ["PaymentReceived"], "payment_proj_log")
 
             const store = new PostgresEventStore({
                 pool,
@@ -275,8 +267,8 @@ describe("Inline Projections", () => {
         })
 
         test("multiple inline projections run in same transaction", async () => {
-            const proj1 = trackingProjection("proj-1", Query.all(), "proj1_log")
-            const proj2 = trackingProjection("proj-2", Query.all(), "proj2_log")
+            const proj1 = trackingProjection("proj-1", [], "proj1_log")
+            const proj2 = trackingProjection("proj-2", [], "proj2_log")
 
             const store = new PostgresEventStore({
                 pool,
@@ -360,7 +352,7 @@ describe("Inline Projections", () => {
 
     describe("COPY path (> copyThreshold events)", () => {
         test("inline projection runs correctly with COPY path", async () => {
-            const projection = trackingProjection("copy-proj", Query.all(), "copy_proj_log")
+            const projection = trackingProjection("copy-proj", [], "copy_proj_log")
 
             // Set copyThreshold to 2 so we trigger the COPY path with 3 events
             const store = new PostgresEventStore({
@@ -405,7 +397,7 @@ describe("Inline Projections", () => {
         test("throw in projection rolls back COPY-path events", async () => {
             const failingProjection: Projection = {
                 name: "copy-fail",
-                canHandle: Query.all(),
+                canHandle: [],
                 handle: async () => {
                     throw new Error("COPY projection failed!")
                 }
@@ -434,48 +426,6 @@ describe("Inline Projections", () => {
             } finally {
                 await pool.query("TRUNCATE table events")
                 await pool.query("ALTER SEQUENCE events_sequence_position_seq RESTART WITH 1")
-            }
-        })
-    })
-
-    describe("canHandle tag filtering", () => {
-        test("projection with tag filter only receives matching events", async () => {
-            const o1Projection = trackingProjection(
-                "o1-proj",
-                Query.fromItems([{ types: ["OrderPlaced"], tags: Tags.fromObj({ orderId: "O1" }) }]),
-                "o1_proj_log"
-            )
-
-            const store = new PostgresEventStore({
-                pool,
-                inlineProjections: [o1Projection]
-            })
-            await store.ensureInstalled()
-
-            const initClient = await pool.connect()
-            try {
-                await o1Projection.init!(initClient)
-            } finally {
-                initClient.release()
-            }
-
-            try {
-                await store.append({
-                    events: [
-                        event("OrderPlaced", Tags.fromObj({ orderId: "O1" }), { total: 50 }),
-                        event("OrderPlaced", Tags.fromObj({ orderId: "O2" }), { total: 75 }),
-                        event("OrderShipped", Tags.fromObj({ orderId: "O1" }))
-                    ]
-                })
-
-                // Only the O1 OrderPlaced event should match (O2 has wrong tag, OrderShipped has wrong type)
-                expect(o1Projection.received).toHaveLength(1)
-                expect(o1Projection.received[0]).toHaveLength(1)
-                expect(o1Projection.received[0][0].event.data).toEqual({ total: 50 })
-            } finally {
-                await pool.query("TRUNCATE table events")
-                await pool.query("ALTER SEQUENCE events_sequence_position_seq RESTART WITH 1")
-                await pool.query("DROP TABLE IF EXISTS o1_proj_log")
             }
         })
     })
