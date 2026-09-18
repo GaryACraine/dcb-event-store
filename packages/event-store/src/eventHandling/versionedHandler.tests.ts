@@ -12,10 +12,7 @@ type CourseEventV3 = Event<
     { courseId: string; name: string; description: string; department: string }
 >
 
-function makeSequencedEvent<E extends Event>(
-    event: E,
-    schemaVersion?: string
-): SequencedEvent<E> {
+function makeSequencedEvent<E extends Event>(event: E, schemaVersion?: string): SequencedEvent<E> {
     return {
         event,
         tags: Tags.fromObj({ courseId: "c1" }),

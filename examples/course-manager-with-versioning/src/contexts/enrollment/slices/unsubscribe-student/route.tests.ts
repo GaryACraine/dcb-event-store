@@ -3,7 +3,12 @@ import type { Pool } from "pg"
 import { ApiSpecification, expectResponse } from "@dcb-es/event-store-express"
 import type { EventStore } from "@dcb-es/event-store"
 import { configureUnsubscribeStudentRoute } from "./route.js"
-import { courseWasRegistered, courseWasRegisteredV1, studentWasSubscribed, studentWasUnsubscribed } from "../../Events.js"
+import {
+    courseWasRegistered,
+    courseWasRegisteredV1,
+    studentWasSubscribed,
+    studentWasUnsubscribed
+} from "../../Events.js"
 
 const spec = ApiSpecification.for({
     configureApi: (store: EventStore) => configureUnsubscribeStudentRoute({ store, pool: {} as Pool })
@@ -13,7 +18,13 @@ describe("DELETE /courses/:courseId/subscriptions/:studentId — unsubscribe stu
     test("unsubscribes student and returns 204", async () => {
         await spec
             .existingEvents(
-                courseWasRegistered({ courseId: "c1", name: "Math", description: "desc", capacity: 30, department: "Science" }),
+                courseWasRegistered({
+                    courseId: "c1",
+                    name: "Math",
+                    description: "desc",
+                    capacity: 30,
+                    department: "Science"
+                }),
                 studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.delete("/courses/c1/subscriptions/s1"))

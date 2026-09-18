@@ -63,8 +63,7 @@ export const studentDetailsProjection = pongoProjection({
                      * V1/V2 use data.title; V3 uses data.name.
                      */
                     const version = sequencedEvent.schemaVersion ?? "1"
-                    const title =
-                        version === "3" ? (data.name as string) : (data.title as string)
+                    const title = version === "3" ? (data.name as string) : (data.title as string)
 
                     await courseLookup.insertOne({
                         _id: data.courseId as string,

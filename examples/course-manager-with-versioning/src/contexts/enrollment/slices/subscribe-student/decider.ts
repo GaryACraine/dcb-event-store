@@ -1,6 +1,12 @@
 import { decider, IllegalStateError, NotFoundError } from "@dcb-es/event-store"
 import { studentWasSubscribed } from "../../Events.js"
-import { CourseExists, CourseCapacity, CourseTitle, StudentAlreadySubscribed, StudentSubscriptions } from "./decisionModels.js"
+import {
+    CourseExists,
+    CourseCapacity,
+    CourseTitle,
+    StudentAlreadySubscribed,
+    StudentSubscriptions
+} from "./decisionModels.js"
 import type { SubscribeStudentToCourse } from "./command.js"
 
 const STUDENT_SUBSCRIPTION_LIMIT = 5

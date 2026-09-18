@@ -18,7 +18,13 @@ describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
     test("subscribes student to course registered with V3 event", async () => {
         await spec
             .existingEvents(
-                courseWasRegistered({ courseId: "c1", name: "Math", description: "desc", capacity: 30, department: "Science" })
+                courseWasRegistered({
+                    courseId: "c1",
+                    name: "Math",
+                    description: "desc",
+                    capacity: 30,
+                    department: "Science"
+                })
             )
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s1" }))
             .then(
@@ -54,7 +60,13 @@ describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
             .existingEvents(
                 courseWasRegisteredV1({ courseId: "c1", title: "Old Math", capacity: 10 }),
                 // Later re-registered with V3 (simulates migration scenario)
-                courseWasRegistered({ courseId: "c2", name: "New Math", description: "desc", capacity: 30, department: "Science" })
+                courseWasRegistered({
+                    courseId: "c2",
+                    name: "New Math",
+                    description: "desc",
+                    capacity: 30,
+                    department: "Science"
+                })
             )
             .when(agent => agent.post("/courses/c2/subscriptions").send({ studentId: "s1" }))
             .then(
@@ -66,7 +78,13 @@ describe("POST /courses/:courseId/subscriptions — subscribe student", () => {
     test("returns 422 when course is full", async () => {
         await spec
             .existingEvents(
-                courseWasRegistered({ courseId: "c1", name: "Math", description: "desc", capacity: 1, department: "Science" }),
+                courseWasRegistered({
+                    courseId: "c1",
+                    name: "Math",
+                    description: "desc",
+                    capacity: 1,
+                    department: "Science"
+                }),
                 studentWasSubscribed({ courseId: "c1", studentId: "s1" })
             )
             .when(agent => agent.post("/courses/c1/subscriptions").send({ studentId: "s2" }))

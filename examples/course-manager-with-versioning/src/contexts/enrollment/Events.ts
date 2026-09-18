@@ -7,10 +7,7 @@ import { Tags, Event, TaggedEvent } from "@dcb-es/event-store"
 // V3: renames title → name, adds description (current version)
 // ---------------------------------------------------------------------------
 
-export type CourseWasRegisteredV1 = Event<
-    "courseWasRegistered",
-    { courseId: string; title: string; capacity: number }
->
+export type CourseWasRegisteredV1 = Event<"courseWasRegistered", { courseId: string; title: string; capacity: number }>
 
 export type CourseWasRegisteredV2 = Event<
     "courseWasRegistered",

@@ -18,7 +18,13 @@ describe("PUT /courses/:courseId/capacity — update capacity", () => {
     test("updates capacity and returns 204 (seeded with V3 event)", async () => {
         await spec
             .existingEvents(
-                courseWasRegistered({ courseId: "c1", name: "Math", description: "desc", capacity: 30, department: "Science" })
+                courseWasRegistered({
+                    courseId: "c1",
+                    name: "Math",
+                    description: "desc",
+                    capacity: 30,
+                    department: "Science"
+                })
             )
             .when(agent => agent.put("/courses/c1/capacity").send({ newCapacity: 50 }))
             .then(
