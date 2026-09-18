@@ -1,5 +1,4 @@
 import { Pool } from "pg"
-import "source-map-support/register"
 import { startCli } from "./src/Cli.js"
 import { Api, PROJECTION_NAME } from "./src/api/Api.js"
 import {
