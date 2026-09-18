@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool } from "pg"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
-import { Query, Tags, AnyEvent, TaggedEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
+import { Tags, AnyEvent, TaggedEvent, SequencedEvent, SequencePosition } from "@dcb-es/event-store"
 import { v4 as uuid } from "uuid"
 import { pongoProjection, PongoProjectionContext } from "./pongoProjection.js"
 import { pongoDocumentProjection } from "./pongoDocumentProjection.js"
@@ -59,11 +59,7 @@ function toSequencedEvent(tagged: TaggedEvent<AnyEvent>, position: number): Sequ
 
 const courseProjection = pongoProjection({
     name: "PongoCourseProjection",
-    canHandle: Query.fromItems([
-        {
-            types: ["courseWasRegistered", "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"]
-        }
-    ]),
+    canHandle: ["courseWasRegistered", "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"],
     init: async pongo => {
         const db = pongo.db()
         await db.collection<CourseDoc>("courses").createCollection()
@@ -243,11 +239,7 @@ describe("pongoDocumentProjection", () => {
 
     const courseDocProjection = pongoDocumentProjection<CourseDoc>({
         name: "PongoCourseDocProjection",
-        canHandle: Query.fromItems([
-            {
-                types: ["courseWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"]
-            }
-        ]),
+        canHandle: ["courseWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"],
         collectionName: "course_docs",
         getDocumentId: event => {
             const data = event.event.data as Record<string, unknown>
@@ -337,7 +329,7 @@ describe("pongoDocumentProjection", () => {
     test("events with null getDocumentId are skipped", async () => {
         const projection = pongoDocumentProjection<CourseDoc>({
             name: "NullIdProjection",
-            canHandle: Query.fromItems([{ types: ["courseWasRegistered"] }]),
+            canHandle: ["courseWasRegistered"],
             collectionName: "null_id_docs",
             getDocumentId: () => null,
             evolve: doc => doc
@@ -448,7 +440,7 @@ describe("ProjectionSpec with pongoProjection", () => {
     test("ProjectionSpec with pongoDocumentProjection", async () => {
         const courseDocProjection = pongoDocumentProjection<CourseDoc>({
             name: "SpecCourseDocProjection",
-            canHandle: Query.fromItems([{ types: ["courseWasRegistered", "studentWasSubscribed"] }]),
+            canHandle: ["courseWasRegistered", "studentWasSubscribed"],
             collectionName: "spec_course_docs",
             getDocumentId: event => {
                 const data = event.event.data as Record<string, unknown>
@@ -483,44 +475,6 @@ describe("ProjectionSpec with pongoProjection", () => {
                 const result = await client.query("SELECT data FROM spec_course_docs WHERE _id = 'c1'")
                 expect(result.rows).toHaveLength(1)
                 expect(result.rows[0].data.subscribedStudents).toEqual(["s1"])
-            })
-    })
-
-    test("tag-query projection only receives matching events", async () => {
-        const taggedProjection = pongoProjection({
-            name: "TaggedProjection",
-            canHandle: Query.fromItems([
-                {
-                    types: ["courseWasRegistered"],
-                    tags: Tags.fromObj({ courseId: "c1" })
-                }
-            ]),
-            init: async pongo => {
-                await pongo.db().collection("tagged_courses").createCollection()
-            },
-            handle: async (events, context) => {
-                const collection = context.pongo.db().collection("tagged_courses")
-                for (const event of events) {
-                    const data = event.event.data as Record<string, unknown>
-                    await collection.insertOne({
-                        _id: data.courseId as string,
-                        title: data.title as string
-                    })
-                }
-            }
-        })
-
-        // ProjectionSpec filters by event types from canHandle, but tag
-        // filtering happens at the store level. Since ProjectionSpec only
-        // filters by type, both c1 and c2 events will reach the handler.
-        // This test verifies the canHandle query structure is correct.
-        await ProjectionSpec.for({ projection: taggedProjection, pool })
-            .given([])
-            .when([courseWasRegistered({ courseId: "c1", title: "Math", capacity: 30 })])
-            .then(async client => {
-                const result = await client.query("SELECT data FROM tagged_courses WHERE _id = 'c1'")
-                expect(result.rows).toHaveLength(1)
-                expect(result.rows[0].data.title).toBe("Math")
             })
     })
 })

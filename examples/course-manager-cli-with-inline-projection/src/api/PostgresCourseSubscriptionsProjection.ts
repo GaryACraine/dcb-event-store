@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Query, SequencedEvent } from "@dcb-es/event-store"
+import { SequencedEvent } from "@dcb-es/event-store"
 import { pongoProjection, PongoProjectionContext } from "@dcb-es/event-store-postgres"
 
 export interface CourseDoc {
@@ -22,18 +22,14 @@ export interface StudentDoc {
 
 export const courseSubscriptionsProjection = pongoProjection({
     name: "CourseProjection",
-    canHandle: Query.fromItems([
-        {
-            types: [
-                "courseWasRegistered",
-                "courseTitleWasChanged",
-                "courseCapacityWasChanged",
-                "studentWasRegistered",
-                "studentWasSubscribed",
-                "studentWasUnsubscribed"
-            ]
-        }
-    ]),
+    canHandle: [
+        "courseWasRegistered",
+        "courseTitleWasChanged",
+        "courseCapacityWasChanged",
+        "studentWasRegistered",
+        "studentWasSubscribed",
+        "studentWasUnsubscribed"
+    ],
     init: async pongo => {
         const db = pongo.db()
         await db.collection<CourseDoc>("courses").createCollection()

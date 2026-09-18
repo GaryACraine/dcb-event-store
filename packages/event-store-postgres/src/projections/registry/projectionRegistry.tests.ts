@@ -1,5 +1,4 @@
 import { Pool } from "pg"
-import { Query, Tags } from "@dcb-es/event-store"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore } from "../../eventStore/PostgresEventStore.js"
 import {
@@ -244,22 +243,15 @@ describe("projectionRegistry", () => {
 })
 
 describe("serializeCanHandle", () => {
-    test("serializes Query.all()", () => {
-        expect(serializeCanHandle(Query.all())).toEqual({ all: true })
+    test("serializes empty array", () => {
+        expect(serializeCanHandle([])).toEqual({ types: [] })
     })
 
-    test("serializes Query with types only", () => {
-        const query = Query.fromItems([{ types: ["A", "B"] }])
-        expect(serializeCanHandle(query)).toEqual({
-            items: [{ types: ["A", "B"] }]
-        })
+    test("serializes array of event types", () => {
+        expect(serializeCanHandle(["A", "B"])).toEqual({ types: ["A", "B"] })
     })
 
-    test("serializes Query with types and tags", () => {
-        const query = Query.fromItems([{ types: ["A"], tags: Tags.fromObj({ key: "val" }) }])
-        const result = serializeCanHandle(query)
-        expect(result).toEqual({
-            items: [{ types: ["A"], tags: expect.arrayContaining(["key=val"]) }]
-        })
+    test("serializes single event type", () => {
+        expect(serializeCanHandle(["OrderPlaced"])).toEqual({ types: ["OrderPlaced"] })
     })
 })

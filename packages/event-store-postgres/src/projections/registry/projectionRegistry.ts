@@ -1,5 +1,4 @@
 import { PoolClient } from "pg"
-import { Query } from "@dcb-es/event-store"
 import { projectionLockKey } from "../../eventStore/advisoryLocks.js"
 
 export type ProjectionType = "a" | "i"
@@ -62,12 +61,6 @@ export async function setProjectionStatus(
     return { updated: (result.rowCount ?? 0) > 0 }
 }
 
-export function serializeCanHandle(query: Query): object {
-    if (query.isAll) return { all: true }
-    return {
-        items: query.items.map(item => ({
-            types: item.types,
-            ...(item.tags ? { tags: item.tags.values } : {})
-        }))
-    }
+export function serializeCanHandle(eventTypes: string[]): object {
+    return { types: eventTypes }
 }

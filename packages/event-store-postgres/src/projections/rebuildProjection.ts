@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { Event, EventHandler, EventStore, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { Event, EventHandler, EventStore, Query, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { Projection } from "./projection.js"
 import { setProjectionStatus } from "./registry/projectionRegistry.js"
 import { acquireExclusiveProjectionLock } from "./projectionLock.js"
@@ -70,10 +70,7 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
         initClient.release()
     }
 
-    // Build processor config directly without projectionToProcessor to bypass
-    // the shared projection lock check — during rebuild the status is 'inactive'
-    // and the replay handler must still process events.
-    const eventTypes = extractEventTypes(projection)
+    const eventTypes = projection.canHandle
 
     const consumer = createConsumer({
         pool,
@@ -82,7 +79,7 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
         processors: [
             {
                 processorName: name,
-                query: projection.canHandle,
+                query: Query.fromItems([{ types: eventTypes }]),
                 handlerFactory: (txClient: PoolClient): EventHandler<Event, Tags> => ({
                     when: Object.fromEntries(
                         eventTypes.map(type => [
@@ -117,15 +114,4 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
     } finally {
         reactivateClient.release()
     }
-}
-
-function extractEventTypes(projection: Projection): string[] {
-    if (projection.canHandle.isAll) return []
-    const types = new Set<string>()
-    for (const item of projection.canHandle.items) {
-        for (const type of item.types) {
-            types.add(type)
-        }
-    }
-    return [...types]
 }

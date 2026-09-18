@@ -1051,6 +1051,7 @@ versioning patterns side by side.
 | 12 | `phase-12/command-type-standard` | complete | N/A (pure core type and utility update) |
 | 13 | `phase-13/event-type-standardization` | complete | N/A (pure type-level change, no append/read/lock changes) |
 | 14 | `phase-14/schema-evolution` | in progress | N/A |
+| 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 

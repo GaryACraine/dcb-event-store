@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalled.js"
 import { createConsumer } from "../eventHandling/consumer.js"
@@ -30,7 +30,7 @@ describe("rawSqlProjection", () => {
     test("wraps evolve into handle and processes events", async () => {
         const projection = rawSqlProjection({
             name: "test-rawsql",
-            canHandle: Query.fromItems([{ types: ["ItemAdded"] }]),
+            canHandle: ["ItemAdded"],
             init: async client => {
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS test_items (
@@ -94,7 +94,7 @@ describe("rawSqlProjection", () => {
     test("version defaults to undefined", () => {
         const projection = rawSqlProjection({
             name: "no-version",
-            canHandle: Query.fromItems([{ types: ["A"] }]),
+            canHandle: ["A"],
             evolve: async () => {}
         })
         expect(projection.version).toBeUndefined()
@@ -104,7 +104,7 @@ describe("rawSqlProjection", () => {
         const projection = rawSqlProjection({
             name: "with-version",
             version: 3,
-            canHandle: Query.fromItems([{ types: ["A"] }]),
+            canHandle: ["A"],
             evolve: async () => {}
         })
         expect(projection.version).toBe(3)
@@ -141,7 +141,7 @@ describe("projectionToProcessor", () => {
 
         const projection = rawSqlProjection({
             name: HANDLER,
-            canHandle: Query.fromItems([{ types: ["Evt"] }]),
+            canHandle: ["Evt"],
             evolve: async event => {
                 processed.push(event.event.type)
             }
@@ -168,7 +168,7 @@ describe("projectionToProcessor", () => {
 
         const projection = rawSqlProjection({
             name: HANDLER,
-            canHandle: Query.fromItems([{ types: ["CountEvent"] }]),
+            canHandle: ["CountEvent"],
             init: async client => {
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS proj_test_counts (
@@ -224,7 +224,7 @@ describe("projectionToProcessor", () => {
 
         const projection = rawSqlProjection({
             name: HANDLER,
-            canHandle: Query.fromItems([{ types: ["Wanted"] }]),
+            canHandle: ["Wanted"],
             evolve: async event => {
                 processed.push(event.event.type)
             }
@@ -252,7 +252,7 @@ describe("projectionToProcessor", () => {
     test("adapter passes through options", () => {
         const projection = rawSqlProjection({
             name: "opts-test",
-            canHandle: Query.fromItems([{ types: ["A"] }]),
+            canHandle: ["A"],
             evolve: async () => {}
         })
 
