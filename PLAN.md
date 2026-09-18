@@ -1027,6 +1027,28 @@ versioning patterns side by side.
 
 ---
 
+## 11e. Phase 17 — Pongo projection migration strategy (research)
+
+**Goal.** Answer the question: when a projection adds new event types or fields, do we
+need a formal migration mechanism? Deliver a written recommendation with trade-offs so
+future phases have a clear policy before touching projection schema evolution.
+
+**Output:** `docs/pongo-migration-strategy.md`
+
+**Findings:**
+- Emmett ships no projection migrations; each projection owns its DDL via `init()`.
+- Pongo projections are schemaless (JSONB). No DDL needed when adding fields.
+  The existing `rebuildProjection()` + `version` mechanism is the migration strategy.
+- Raw SQL projections require explicit DDL (`ALTER TABLE` or rebuild) and benefit from
+  a migration runner (dbmate or node-pg-migrate) once rebuilds become expensive.
+- Recommendation: stay with Pongo at current scale; switch to raw SQL + migration runner
+  only when relational queries or zero-downtime requirements demand it.
+
+**Grade:** Research/documentation only — no code changes.
+**Touches locks:** No.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1052,6 +1074,7 @@ versioning patterns side by side.
 | 13 | `phase-13/event-type-standardization` | complete | N/A (pure type-level change, no append/read/lock changes) |
 | 14 | `phase-14/schema-evolution` | in progress | N/A |
 | 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
+| 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 
 ## 13. Known issues
 
