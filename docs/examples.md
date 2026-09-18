@@ -5,6 +5,7 @@ The repository includes CLI applications that implement the [course subscription
 | Example | Reads from | Key concepts |
 |---------|-----------|--------------|
 | `course-manager-cli` | Event stream (on-the-fly) | Core DCB pattern, decision models, command handling |
+| `course-manager-with-versioning` | PostgreSQL (Pongo projections) | Event schema evolution — V1/V2/V3 event types, plain `switch (schemaVersion)` pattern, `versionedHandler()` utility, mixed-version test histories, projection versioning with defaults |
 | `course-manager-cli-with-decider-specs` | In-memory (no Postgres) | `Decider` type, `Command`, `DeciderSpecification`, typed domain errors |
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
@@ -820,3 +821,75 @@ Adding a new write or read slice is a two-step operation: create the slice direc
 | Composition root | Inline in `index.ts` | All route registration in `index.ts`; no slice knows about others |
 | Runtime behaviour | — | Identical |
 | API endpoints | — | Identical |
+
+---
+
+## course-manager-with-versioning
+
+**Location:** [`examples/course-manager-with-versioning/`](../examples/course-manager-with-versioning/)
+
+**Phase:** 14 — Event schema evolution
+**Base:** `course-manager-web-api-sliced`
+
+This example demonstrates event schema evolution — handling multiple historical versions of the same event type within a live codebase. The domain and runtime behaviour are identical to the base example; the differences are in how `courseWasRegistered` is typed and handled.
+
+### What it adds
+
+- **Versioned event types** (`Events.ts`) — `courseWasRegistered` has three explicit versions:
+
+  | Version | Shape | schemaVersion |
+  |---------|-------|---------------|
+  | V1 | `{ courseId, title, capacity }` | `"1"` |
+  | V2 | `{ courseId, title, capacity, department }` | `"2"` |
+  | V3 (current) | `{ courseId, name, description, capacity, department }` | `"3"` |
+
+  The union type `CourseWasRegisteredEvent = V1 | V2 | V3` is used in handlers. Factory functions `courseWasRegisteredV1()` and `courseWasRegisteredV2()` exist for seeding test histories.
+
+- **Plain switch pattern** — `CourseCapacity` in `change-course-capacity/decisionModels.ts` handles `courseWasRegistered` with a manual `switch (schemaVersion ?? "1")`, showing the baseline approach with no utility dependency.
+
+- **`versionedHandler()` pattern** — `CourseTitle` in `subscribe-student/decisionModels.ts` uses the `versionedHandler()` utility from `@dcb-es/event-store`. Each schema version maps to a dedicated handler function, keeping version dispatch clean and type-safe.
+
+- **`CourseExists`** — requires no versioning: all three versions of `courseWasRegistered` mean the course exists, and the handler ignores data entirely.
+
+- **Projection versioning** — `course-details/projection.ts` handles `courseWasRegistered` by checking `schemaVersion` and normalising to a single read model shape: V1 defaults `department` to `"Unknown"` and `description` to `""`; V2 defaults `description` to `""`, uses the provided `department`; V3 maps `data.name` → read model `title`.
+
+- **Mixed-version test histories** — route tests seed events with old-version factory functions (`courseWasRegisteredV1`, `courseWasRegisteredV2`) and assert that the current command logic works correctly against them.
+
+### Versioning patterns side by side
+
+```typescript
+// Pattern 1 — plain switch (change-course-capacity/decisionModels.ts)
+courseWasRegistered: (sequencedEvent, state) => {
+    switch (sequencedEvent.schemaVersion ?? "1") {
+        case "1":
+        case "2":
+            return { capacity: (sequencedEvent.event.data as { capacity: number }).capacity, ... }
+        case "3":
+        default:
+            return { capacity: (sequencedEvent.event.data as { capacity: number }).capacity, ... }
+    }
+}
+
+// Pattern 2 — versionedHandler() utility (subscribe-student/decisionModels.ts)
+courseWasRegistered: versionedHandler<CourseWasRegisteredEvent, string>({
+    "1": ({ event }) => (event as CourseWasRegisteredV1).data.title,
+    "2": ({ event }) => (event as CourseWasRegisteredV2).data.title,
+    "3": ({ event }) => (event as CourseWasRegisteredV3).data.name
+})
+```
+
+`versionedHandler()` defaults to `"1"` when `schemaVersion` is absent, throws an informative error for unrecognised versions (unless a `fallback` is provided), and passes the full `SequencedEvent` and current state to each handler.
+
+### How it differs from `course-manager-web-api-sliced`
+
+| Aspect | `course-manager-web-api-sliced` | `course-manager-with-versioning` |
+|--------|----------------------------------|----------------------------------|
+| `courseWasRegistered` event | Single type with `title` | Union of V1/V2/V3 types |
+| `schemaVersion` on appended events | Not set | Set to `"3"` on current writes |
+| Decision model versioning | Not demonstrated | `CourseCapacity` (switch), `CourseTitle` (versionedHandler()) |
+| `CourseExists` | Unaffected | Still unaffected — shown explicitly for contrast |
+| Projection | Ignores `schemaVersion` | Maps V1/V2 `title` → read model `title`; V3 `name` → read model `title` |
+| Read model | `{ title, capacity, ... }` | `{ title, description, department, capacity, ... }` |
+| `registerCourse` command | `{ id, title, capacity }` | `{ id, name, description, capacity, department }` |
+| Test histories | Current-version events only | V1, V2, and V3 events in route tests |
+| Runtime behaviour | — | Identical |
