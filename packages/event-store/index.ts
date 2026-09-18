@@ -35,6 +35,7 @@ export { EventHandler } from "./src/eventHandling/EventHandler.js"
 export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState.js"
 export { buildDecisionModel, EventHandlers, EventHandlerStates } from "./src/eventHandling/buildDecisionModel.js"
 export { Decider, decider, handle, HandleOptions } from "./src/eventHandling/Decider.js"
+export { versionedHandler, VersionHandlers } from "./src/eventHandling/versionedHandler.js"
 
 export {
     DeciderSpecification,

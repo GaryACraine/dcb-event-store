@@ -1007,6 +1007,26 @@ Modifying the core event primitive poses a high risk to the serialization/deseri
 
 ---
 
+## 11d. Phase 14 — Event schema evolution
+
+**Goal.** Complete the `versionedHandler()` spike utility: export it from the package barrel,
+add a full test suite, and ship a new example showing both plain-switch and `versionedHandler()`
+versioning patterns side by side.
+
+**Scope:**
+- `packages/event-store`: export `versionedHandler` and `VersionHandlers` from `index.ts`;
+  add `versionedHandler.tests.ts`
+- `examples/course-manager-with-versioning`: new example based on `course-manager-web-api-sliced`
+  with V1/V2/V3 `courseWasRegistered` event types, decision models demonstrating both the plain
+  `switch (schemaVersion)` pattern and the `versionedHandler()` utility, and mixed-version
+  test histories
+- `docs/examples.md`: new section for the versioning example
+
+**Grade:** Easy
+**Touches locks:** No
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1030,6 +1050,7 @@ Modifying the core event primitive poses a high risk to the serialization/deseri
 | 11 | `phase-11/web-api-sliced` | in progress | N/A (no append/read/lock changes) |
 | 12 | `phase-12/command-type-standard` | complete | N/A (pure core type and utility update) |
 | 13 | `phase-13/event-type-standardization` | complete | N/A (pure type-level change, no append/read/lock changes) |
+| 14 | `phase-14/schema-evolution` | in progress | N/A |
 
 ## 13. Known issues
 
