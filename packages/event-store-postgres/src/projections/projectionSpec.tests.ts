@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Tags } from "@dcb-es/event-store"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { rawSqlProjection } from "./rawSqlProjection.js"
 import { ProjectionSpec } from "./projectionSpec.js"
@@ -15,7 +15,7 @@ const event = (
 
 const counterProjection = rawSqlProjection({
     name: "spec-test-counter",
-    canHandle: Query.fromItems([{ types: ["Incremented", "Decremented"] }]),
+    canHandle: ["Incremented", "Decremented"],
     init: async client => {
         await client.query(`
             CREATE TABLE IF NOT EXISTS spec_counter (

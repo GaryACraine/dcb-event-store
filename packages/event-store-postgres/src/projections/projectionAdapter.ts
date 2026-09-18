@@ -1,5 +1,5 @@
 import { PoolClient } from "pg"
-import { Event, EventHandler, SequencedEvent, Tags } from "@dcb-es/event-store"
+import { Event, EventHandler, Query, SequencedEvent, Tags } from "@dcb-es/event-store"
 import { ConsumerProcessorConfig } from "../eventHandling/consumer.js"
 import { StartPosition } from "../eventHandling/startPositions.js"
 import { Projection } from "./projection.js"
@@ -16,12 +16,12 @@ export function projectionToProcessor(
     projection: Projection,
     options?: ProjectionProcessorOptions
 ): ConsumerProcessorConfig {
-    const eventTypes = extractEventTypes(projection)
+    const eventTypes = projection.canHandle
     const projectionVersion = projection.version ?? 1
 
     return {
         processorName: projection.name,
-        query: projection.canHandle,
+        query: Query.fromItems([{ types: eventTypes }]),
         handlerFactory: (client: PoolClient): EventHandler<Event, Tags> => ({
             when: Object.fromEntries(
                 eventTypes.map(type => [
@@ -43,17 +43,4 @@ export function projectionToProcessor(
         stopAfter: options?.stopAfter,
         batchSize: options?.batchSize
     }
-}
-
-function extractEventTypes(projection: Projection): string[] {
-    if (projection.canHandle.isAll) {
-        return []
-    }
-    const types = new Set<string>()
-    for (const item of projection.canHandle.items) {
-        for (const type of item.types) {
-            types.add(type)
-        }
-    }
-    return [...types]
 }

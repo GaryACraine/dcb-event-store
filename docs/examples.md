@@ -342,10 +342,10 @@ This example extends the consumer example by replacing the ad-hoc `EventHandler`
 
 ### What it adds
 
-- **`rawSqlProjection`** replaces the hand-written `EventHandler` factory. The projection declares its name, the events it handles via a `canHandle` Query, an `init` function for DDL, an `evolve` function for per-event SQL, and an optional `truncate` function for cleanup.
-- **`projectionToProcessor`** bridges the `Projection` to a `ConsumerProcessorConfig`, so it can be passed directly to `createConsumer`. The adapter extracts the query from `canHandle` and passes it to the processor, avoiding lossy round-tripping through `when` keys.
+- **`rawSqlProjection`** replaces the hand-written `EventHandler` factory. The projection declares its name, the events it handles via a `canHandle: string[]` event type list, an `init` function for DDL, an `evolve` function for per-event SQL, and an optional `truncate` function for cleanup.
+- **`projectionToProcessor`** bridges the `Projection` to a `ConsumerProcessorConfig`, so it can be passed directly to `createConsumer`. The adapter constructs a `Query` from `canHandle` and passes it to the processor's read subscription.
 - **`ProjectionSpec`** tests the projection in isolation against a real Postgres database with automatic rollback. The given/when/then API fabricates `SequencedEvent` objects from `DcbEvent` inputs, calls `init` and `handle`, then runs user assertions inside a transaction that is rolled back after the assertion completes.
-- **`canHandle` is a full `Query`**, not just an event-type list. This is the DCB-native improvement over Emmett's projections: tag filters in the query are passed through to the event store subscription, so the processor only receives events matching the full query (types + optional tags).
+- **`canHandle` is a `string[]`** — a plain list of event type names the projection processes. Tag-based filtering is an append-condition concern, not a projection concern.
 
 ### Entry point wiring
 
@@ -378,16 +378,13 @@ The projection is defined using `rawSqlProjection`, which wraps a per-event `evo
 
 ```typescript
 import { rawSqlProjection } from "@dcb-es/event-store-postgres"
-import { Query } from "@dcb-es/event-store"
 
 export const courseSubscriptionsProjection = rawSqlProjection({
     name: "CourseProjection",
-    canHandle: Query.fromItems([{
-        types: [
-            "courseWasRegistered", "courseTitleWasChanged", "courseCapacityWasChanged",
-            "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"
-        ]
-    }]),
+    canHandle: [
+        "courseWasRegistered", "courseTitleWasChanged", "courseCapacityWasChanged",
+        "studentWasRegistered", "studentWasSubscribed", "studentWasUnsubscribed"
+    ],
     init: async (client) => { /* CREATE TABLE IF NOT EXISTS ... */ },
     evolve: async (event, client) => { /* switch on event.event.type */ },
     truncate: async (client) => { /* TRUNCATE ... */ }
@@ -412,9 +409,9 @@ await ProjectionSpec.for({ projection: courseSubscriptionsProjection, pool })
 
 | Aspect | Consumer example | Projections example |
 |--------|-----------------|-------------------|
-| Projection definition | `EventHandler` factory function | `rawSqlProjection()` with `canHandle` Query |
+| Projection definition | `EventHandler` factory function | `rawSqlProjection()` with `canHandle: string[]` |
 | Consumer wiring | Manual `{ processorName, handlerFactory }` | `projectionToProcessor(projection)` |
-| Event subscription query | Introspected from `when` keys + `tagFilter` | Passed directly from `canHandle` Query |
+| Event subscription query | Introspected from `when` keys | Constructed from `canHandle` event type list |
 | DDL management | Separate `installPostgresCourseSubscriptionsRepository` function | `projection.init()` on the projection itself |
 | Cleanup | Manual `TRUNCATE` in test teardown | `projection.truncate()` method |
 | Isolated projection tests | Not available | `ProjectionSpec` with rollback isolation |
@@ -465,7 +462,7 @@ import { pongoProjection, PongoProjectionContext } from "@dcb-es/event-store-pos
 
 export const courseSubscriptionsProjection = pongoProjection({
     name: "CourseProjection",
-    canHandle: Query.fromItems([{ types: [...] }]),
+    canHandle: [...],
     init: async (pongo) => {
         await pongo.db().collection("courses").createCollection()
         await pongo.db().collection("students").createCollection()

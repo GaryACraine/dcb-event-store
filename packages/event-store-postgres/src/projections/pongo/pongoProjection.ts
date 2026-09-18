@@ -1,5 +1,5 @@
 import { PoolClient } from "pg"
-import { Query, SequencedEvent } from "@dcb-es/event-store"
+import { SequencedEvent } from "@dcb-es/event-store"
 import { Projection, ProjectionContext } from "../projection.js"
 import { pongoClient, type PongoClient } from "@event-driven-io/pongo"
 import { pongoDriver } from "@event-driven-io/pongo/pg"
@@ -16,7 +16,7 @@ export interface PongoProjectionOptions {
     name: string
     version?: number
     kind?: string
-    canHandle: Query
+    canHandle: string[]
     handle: (events: SequencedEvent[], context: PongoProjectionContext) => Promise<void>
     init?: (pongo: PongoClient) => Promise<void>
     truncate?: (pongo: PongoClient) => Promise<void>

@@ -1,21 +1,16 @@
-import { Query } from "@dcb-es/event-store"
 import { rawSqlProjection } from "@dcb-es/event-store-postgres"
 import { PostgresCourseSubscriptionsRepository } from "../postgresCourseSubscriptionRepository/PostgresCourseSubscriptionRespository.js"
 
 export const courseSubscriptionsProjection = rawSqlProjection({
     name: "CourseProjection",
-    canHandle: Query.fromItems([
-        {
-            types: [
-                "courseWasRegistered",
-                "courseTitleWasChanged",
-                "courseCapacityWasChanged",
-                "studentWasRegistered",
-                "studentWasSubscribed",
-                "studentWasUnsubscribed"
-            ]
-        }
-    ]),
+    canHandle: [
+        "courseWasRegistered",
+        "courseTitleWasChanged",
+        "courseCapacityWasChanged",
+        "studentWasRegistered",
+        "studentWasSubscribed",
+        "studentWasUnsubscribed"
+    ],
     init: async client => {
         await client.query(`
             CREATE TABLE IF NOT EXISTS courses (

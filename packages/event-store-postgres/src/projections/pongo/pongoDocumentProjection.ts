@@ -1,11 +1,11 @@
-import { Query, SequencedEvent } from "@dcb-es/event-store"
+import { SequencedEvent } from "@dcb-es/event-store"
 import { Projection } from "../projection.js"
 import { pongoProjection, PongoProjectionContext } from "./pongoProjection.js"
 
 export interface PongoDocumentProjectionOptions<TDocument extends Record<string, unknown>> {
     name: string
     version?: number
-    canHandle: Query
+    canHandle: string[]
     collectionName: string
     getDocumentId: (event: SequencedEvent) => string | null
     evolve: (document: TDocument | null, event: SequencedEvent) => TDocument | null

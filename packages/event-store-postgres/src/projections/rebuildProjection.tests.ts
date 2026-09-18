@@ -1,5 +1,5 @@
 import { Pool } from "pg"
-import { AnyEvent, TaggedEvent, Query, Tags } from "@dcb-es/event-store"
+import { AnyEvent, TaggedEvent, Tags } from "@dcb-es/event-store"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalled.js"
@@ -42,7 +42,7 @@ describe("rebuildProjection", () => {
         return rawSqlProjection({
             name,
             version: 1,
-            canHandle: Query.fromItems([{ types: ["ItemAdded"] }]),
+            canHandle: ["ItemAdded"],
             init: async client => {
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS rebuild_items (
@@ -164,7 +164,7 @@ describe("rebuildProjection", () => {
         const inlineProjection = rawSqlProjection({
             name: "inline-rebuild-test",
             version: 1,
-            canHandle: Query.fromItems([{ types: ["ItemAdded"] }]),
+            canHandle: ["ItemAdded"],
             init: async client => {
                 await client.query(`
                     CREATE TABLE IF NOT EXISTS rebuild_items (

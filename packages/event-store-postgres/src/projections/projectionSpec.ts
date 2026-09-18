@@ -25,14 +25,9 @@ function toSequencedEvents(events: TaggedEvent[], startPosition: number): Sequen
     }))
 }
 
-function filterByQuery(events: SequencedEvent[], projection: Projection): SequencedEvent[] {
-    if (projection.canHandle.isAll) return events
-    const handledTypes = new Set<string>()
-    for (const item of projection.canHandle.items) {
-        for (const type of item.types) {
-            handledTypes.add(type)
-        }
-    }
+function filterByTypes(events: SequencedEvent[], projection: Projection): SequencedEvent[] {
+    if (projection.canHandle.length === 0) return events
+    const handledTypes = new Set(projection.canHandle)
     return events.filter(e => handledTypes.has(e.event.type))
 }
 
@@ -55,13 +50,13 @@ export const ProjectionSpec = {
                                     }
 
                                     const sequencedGiven = toSequencedEvents(givenEvents, 0)
-                                    const filteredGiven = filterByQuery(sequencedGiven, projection)
+                                    const filteredGiven = filterByTypes(sequencedGiven, projection)
                                     if (filteredGiven.length > 0) {
                                         await projection.handle(filteredGiven, { client })
                                     }
 
                                     const sequencedWhen = toSequencedEvents(whenEvents, givenEvents.length)
-                                    const filteredWhen = filterByQuery(sequencedWhen, projection)
+                                    const filteredWhen = filterByTypes(sequencedWhen, projection)
                                     if (filteredWhen.length > 0) {
                                         await projection.handle(filteredWhen, { client })
                                     }

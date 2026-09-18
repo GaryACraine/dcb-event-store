@@ -1,5 +1,5 @@
 import { PoolClient } from "pg"
-import { Query, SequencedEvent } from "@dcb-es/event-store"
+import { SequencedEvent } from "@dcb-es/event-store"
 import { Projection, ProjectionContext } from "./projection.js"
 import { registerProjection, serializeCanHandle } from "./registry/projectionRegistry.js"
 import { ensureRegistryInstalled } from "./registry/ensureRegistryInstalled.js"
@@ -7,7 +7,7 @@ import { ensureRegistryInstalled } from "./registry/ensureRegistryInstalled.js"
 export interface RawSqlProjectionOptions {
     name: string
     version?: number
-    canHandle: Query
+    canHandle: string[]
     init?: (client: PoolClient) => Promise<void>
     evolve: (event: SequencedEvent, client: PoolClient) => Promise<void>
     truncate?: (client: PoolClient) => Promise<void>

@@ -425,7 +425,7 @@ export class PostgresEventStore implements EventStore {
             )
             if (!acquired || !isActive) continue
 
-            const filtered = filterEventsByQuery(events, projection.canHandle)
+            const filtered = filterEventsByTypes(events, projection.canHandle)
             if (filtered.length > 0) {
                 await projection.handle(filtered, { client })
             }
@@ -580,22 +580,8 @@ function flattenConditionRows(conditions: { cmdIdx: number; type: string; tags: 
     return { condCmdIdxs, condTypes, condTags, condAfter }
 }
 
-/**
- * Filter events by a projection's canHandle Query. For Query.all(), all events pass.
- * Otherwise an event matches if any QueryItem matches (type in item.types AND,
- * if item.tags is set, all tag values are present on the event).
- */
-function filterEventsByQuery(events: SequencedEvent[], query: Query): SequencedEvent[] {
-    if (query.isAll) return events
-    return events.filter(se => {
-        for (const item of query.items) {
-            if (!item.types.includes(se.event.type)) continue
-            if (item.tags) {
-                const eventTagValues = se.tags.values
-                if (!item.tags.values.every(t => eventTagValues.includes(t))) continue
-            }
-            return true
-        }
-        return false
-    })
+function filterEventsByTypes(events: SequencedEvent[], types: string[]): SequencedEvent[] {
+    if (types.length === 0) return events
+    const typeSet = new Set(types)
+    return events.filter(se => typeSet.has(se.event.type))
 }

@@ -94,20 +94,21 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   lock namespace (distinct from boundary locks per invariant 3).
 - **Consumer** (`createConsumer`) — wraps one or more processors with shared
   lifecycle. `stop()` aborts all processors and resolves when all are done.
-- **Projection** — formalises read model handlers: `name`, `canHandle` (a DCB
-  `Query` — types + optional tag filters), `handle(events, context)` where
-  `context.client` is the transaction's `PoolClient`, `init` for DDL, `truncate`
-  for cleanup, and `version` for the future registry (Phase 7). The DCB-native
-  improvement over Emmett is that `canHandle` accepts a full `Query`, not just
-  an event-type list.
+- **Projection** — formalises read model handlers: `name`, `canHandle: string[]`
+  (a plain list of event type names this projection processes),
+  `handle(events, context)` where `context.client` is the transaction's
+  `PoolClient`, `init` for DDL, `truncate` for cleanup, and `version` for the
+  registry. Tag-based filtering is an append-condition concern handled at the
+  boundary level, not a projection concern.
 - **`rawSqlProjection()`** — factory that wraps a per-event `evolve(event,
   client)` function into the batch-capable `Projection.handle` interface.
   Keeps user code simple (handle one event at a time) while the `Projection`
   interface supports batch processing for future inline projections.
 - **`projectionToProcessor()`** — adapter bridging `Projection` →
-  `ConsumerProcessorConfig` for use with `createConsumer`. Passes the
-  `canHandle` query directly to the processor via the `query` option,
-  avoiding lossy round-tripping through handler `when` keys.
+  `ConsumerProcessorConfig` for use with `createConsumer`. Constructs
+  `Query.fromItems([{ types: projection.canHandle }])` for the processor's
+  `query` option, so the store subscription receives only the relevant event
+  types.
 - **ProjectionSpec** — fluent given/when/then API for testing projections
   against real Postgres with automatic rollback isolation. Fabricates
   `SequencedEvent` objects from `TaggedEvent` inputs, calls `init` and `handle`,
@@ -147,7 +148,7 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   by `(name, version)` with columns `type` (`'a'` async, `'i'` inline),
   `kind` (factory origin: `'raw-sql'`, `'pongo'`, `'pongo-document'`),
   `status` (`'active'` / `'inactive'`), and `definition` (serialised
-  `canHandle` query). Factories auto-register during `init()`;
+  `canHandle` event type list). Factories auto-register during `init()`;
   `PostgresEventStore.ensureInstalled()` re-registers inline projections
   with `type = 'i'`.
 - **Projection Lock** (`R:` namespace) — xact-scoped advisory locks
