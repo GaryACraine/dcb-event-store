@@ -1,5 +1,4 @@
 import { Pool } from "pg"
-import "source-map-support/register"
 import { startCli } from "./src/Cli.js"
 import { Api } from "./src/api/Api.js"
 import { PostgresEventStore } from "@dcb-es/event-store-postgres"
