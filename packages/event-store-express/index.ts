@@ -18,6 +18,7 @@ export {
     configureApplication,
     registerWebApi,
     startAPI,
+    stopAPI,
     type WebApiSetup,
     type ApplicationOptions,
     type StartApiOptions
@@ -33,6 +34,7 @@ export {
     type ResponseAssert
 } from "./src/testing/index.js"
 export { sseEventFeed, type SseOptions } from "./src/sse.js"
+export { onShutdown, type ShutdownHandler } from "./src/lifecycle.js"
 export { preferWait, type WaitFunction, type PreferWaitOptions } from "./src/preferWait.js"
 export { withETag, parsePageParams, type PaginatedResult } from "./src/query.js"
 export { getIdempotencyKey } from "./src/idempotency.js"

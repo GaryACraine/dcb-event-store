@@ -66,18 +66,28 @@ export function registerWebApi(app: express.Express, apis: WebApiSetup[]): void 
     app.use(router)
 }
 
+/**
+ * Starts the server. It registers no signal handlers (as Emmett's `startAPI`): each call used to add its own
+ * SIGTERM/SIGINT listeners, never removed, racing the app's shutdown. Register the shutdown once with `onShutdown`,
+ * stopping the server with `stopAPI`.
+ */
 export function startAPI(app: express.Express, options?: StartApiOptions): http.Server {
     const port = options?.port ?? 0
     const server = http.createServer(app)
 
-    const shutdown = () => {
-        server.close()
-    }
-
-    process.on("SIGTERM", shutdown)
-    process.on("SIGINT", shutdown)
-
     server.listen(port)
 
     return server
+}
+
+/**
+ * Stops the server: no new connections, and the open ones (keep-alive, an SSE feed) are ended rather than waited
+ * for, since an event feed never ends by itself. Resolves when the server has closed.
+ */
+export function stopAPI(server: http.Server): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (!server.listening) return resolve()
+        server.close(err => (err ? reject(err) : resolve()))
+        server.closeAllConnections()
+    })
 }

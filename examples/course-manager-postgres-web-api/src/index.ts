@@ -6,7 +6,7 @@ import {
     ensureHandlersInstalled,
     waitUntilProcessed
 } from "@dcb-es/event-store-postgres"
-import { getApplication, startAPI } from "@dcb-es/event-store-express"
+import { getApplication, onShutdown, startAPI, stopAPI } from "@dcb-es/event-store-express"
 import { configureRoutes } from "./api/routes.js"
 import { courseSubscriptionsProjection, PROJECTION_NAME } from "./api/PostgresCourseSubscriptionsProjection.js"
 
@@ -60,11 +60,10 @@ server.on("listening", () => {
     console.log(`  GET  http://localhost:${addr.port}/events   (SSE)`)
 })
 
-const shutdown = async () => {
+// Once, whatever signals arrive: stop taking requests (ending the SSE feeds), stop the consumer, end the pool.
+onShutdown(async () => {
     console.log("Shutting down…")
+    await stopAPI(server)
     await consumer.stop()
     await pool.end()
-}
-
-process.on("SIGTERM", shutdown)
-process.on("SIGINT", shutdown)
+})
