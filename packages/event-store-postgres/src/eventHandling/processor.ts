@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from "pg"
-import { EventHandler, EventStore, Query, Tags } from "@dcb-es/event-store"
+import { EventHandler, EventStore, Query, SequencePosition, Tags } from "@dcb-es/event-store"
 import { acquireProcessorLock, ProcessorLockHandle } from "./processorLock.js"
 import { readCheckpoint, storeCheckpoint, Checkpoint } from "./checkpointer.js"
 import { resolveStartPosition, StartPosition } from "./startPositions.js"
@@ -210,8 +210,32 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                 if (!hadEvents || (stopAfter !== undefined && processedCount >= stopAfter)) break
             }
         } else {
+            // The checkpoint means "has seen everything up to X", as Emmett's does: when the events after the last
+            // one handled didn't match the query, it moves past them. Without it, a wait for a position the
+            // processor has no events at would time out (PLAN phase 18).
+            const onCaughtUp = async (seen: SequencePosition): Promise<void> => {
+                const storeResult = await storeCheckpoint(
+                    pool,
+                    processorName,
+                    tableName,
+                    seen,
+                    currentVersion,
+                    instanceId
+                )
+                if (storeResult === "VERSION_MISMATCH") {
+                    throw new Error(`Checkpoint version mismatch for "${processorName}" — lock may have been stolen`)
+                }
+                position = seen
+                currentVersion++
+            }
+
             // Subscribe mode: persistent cursor + LISTEN wakeup
-            for await (const event of eventStore.subscribe(query, { after: position, pollIntervalMs, signal })) {
+            for await (const event of eventStore.subscribe(query, {
+                after: position,
+                pollIntervalMs,
+                signal,
+                onCaughtUp
+            })) {
                 if (signal?.aborted) break
                 await processEvent(event)
                 if (stopAfter !== undefined && processedCount >= stopAfter) break
