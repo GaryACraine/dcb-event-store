@@ -1130,7 +1130,7 @@ The leak tests failed on the old code with the real numbers: 65 notification lis
 | 14 | `phase-14/schema-evolution` | in progress | N/A |
 | 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
-| 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: see the PR |
+| 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 
 ## 13. Known issues
 
@@ -1156,3 +1156,18 @@ Two root causes were found and fixed:
    hoist `@types/pg@8.20.0` to the workspace root `devDependencies` so
    TypeScript finds the correct version at `node_modules/@types/pg` before
    walking up.
+
+### 13.2 Three quick pg bench scenarios fail their correctness checks on main
+
+**Status:** open (found in phase 18, not caused by it)
+
+`pnpm --filter @dcb-es/event-store-bench exec vitest run -c vitest.pg.config.ts`: on `main` (8071339) and on phase 18
+alike, 7 of 10 quick scenarios pass and these three fail a check, not a threshold:
+
+- `bulk-import`: check "total-event-count";
+- `raw-throughput`: check "event-count";
+- `parallel-import`: check "all-batches-completed".
+
+All three are large or parallel bulk appends (the COPY path); the timing numbers they print match between main and the
+branch. `pnpm test` doesn't run this config, which is why it went unnoticed. To investigate before the next phase that
+touches append.
