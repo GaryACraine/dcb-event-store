@@ -1049,6 +1049,61 @@ future phases have a clear policy before touching projection schema evolution.
 
 ---
 
+## 11f. Phase 18 — Read-side hardening from Emmett PRs #405 and #406
+
+**Why.** The eventmodelers DCB kit (its PLAN 14.10b) found that a page which writes and then refetches several async
+read models got a 500 after 5 s: `waitUntilProcessed` timed out for every read model that doesn't handle the write.
+Two further defects came with it: listener leaks, and `preferWait` answering 500 instead of 504. Reviewing Emmett's
+recent PRs against the code we adapted from it explained the first and found more.
+
+**Emmett PR #405 (message processor memory leak): pattern.** None of its 22 files has a counterpart here (TaskProcessor,
+message queue, fusion streams). Its lesson, remove a listener when its race settles, found two leaks of ours:
+- `subscribe` added a notification and an abort listener on every idle poll, never removed when the timer won (~10 a
+  second per processor, hidden by `setMaxListeners(0)`);
+- `waitUntilProcessed` added one every 100 ms (a MaxListenersExceededWarning).
+
+Its `processors.ts` also shows the root cause of the timeout. Emmett stores the checkpoint at the last message *read*,
+before its `canHandle` filter. Ours subscribes with a filtered query (phase 4's DCB improvement), so the checkpoint only
+moved on handled events.
+
+**Emmett PR #406 (graceful shutdown): take.** It keeps one process listener per signal. Ours had worse:
+`startAPI` added its own SIGTERM/SIGINT listeners on every call, racing the app's shutdown. `server.close()` waited on
+the SSE feed, so the process stayed up, and the second Ctrl-C ended the pool twice.
+
+**Changes.**
+- **Public interface change (as required above):** `SubscribeOptions` gains `onCaughtUp?: (position) => void |
+  Promise<void>`. It's optional, so existing callers and implementations are unaffected. Postgres reports a fresh read
+  barrier high-water mark, and memory reports its last position.
+- The processor stores the reported position as its checkpoint (CAS, NOTIFY). A checkpoint now means "has seen
+  everything up to X".
+- `subscribe` and `waitUntilProcessed` hold one listener of each kind for their life. `waitUntilProcessed` is woken
+  only by its handler's notifications.
+- `WaitTimeoutError` moves to core as a `DcbError` (504). `toProblemDetails` maps it, and `preferWait` matches it by
+  class or name.
+- `onShutdown` and `stopAPI` in event-store-express. `startAPI` no longer registers signals, and the three web examples
+  register their shutdown once.
+- `UPSTREAM.md` (file map, watched paths, baseline, review log) and `pnpm upstream:emmett`: the standing routine for
+  Emmett PRs (CLAUDE.md, "Keeping step with Emmett").
+
+**Tests.** 46 new, all written first:
+- `subscribeCaughtUp.tests.ts` (both lock strategies): these cover a matching write held open below the hwm, and a
+  restarted sequence;
+- memory `onCaughtUp`;
+- five processor checkpoint tests;
+- `waitUntilProcessed` listener counts and the core error;
+- `preferWait`'s 504 cases;
+- `lifecycle.tests.ts` (Emmett's gracefulShutdown spec translated, plus ours).
+
+The leak tests failed on the old code with the real numbers: 65 notification listeners after 0.5 s idle, 16 during a
+1.5 s wait, and one error listener more per subscription on a reused connection.
+
+**No new example.** This is a fix phase. The three web examples change only to register their shutdown with
+`onShutdown`, because `startAPI` no longer does it for them.
+
+**Grade:** Medium. **Touches locks:** No (the read barrier is called, not changed).
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1075,6 +1130,7 @@ future phases have a clear policy before touching projection schema evolution.
 | 14 | `phase-14/schema-evolution` | in progress | N/A |
 | 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
+| 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: see the PR |
 
 ## 13. Known issues
 

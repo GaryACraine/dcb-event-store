@@ -91,7 +91,11 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
   session-scoped instance lock, CAS-versioned checkpoints, and
   start-position policies (`BEGINNING`, `CURRENT`). `runHandler` is a thin
   backward-compatible wrapper. The processor lock uses the `P:` advisory
-  lock namespace (distinct from boundary locks per invariant 3).
+  lock namespace (distinct from boundary locks per invariant 3). Its
+  checkpoint means **"has seen everything up to X"** (Emmett's meaning): it
+  subscribes only to the events it handles, and moves the checkpoint past the
+  rest through `SubscribeOptions.onCaughtUp` (the read barrier's high-water
+  mark), so `waitUntilProcessed` works for any position (phase 18).
 - **Consumer** (`createConsumer`) — wraps one or more processors with shared
   lifecycle. `stop()` aborts all processors and resolves when all are done.
 - **Projection** — formalises read model handlers: `name`, `canHandle: string[]`
@@ -181,8 +185,11 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 - **Application factory** — `getApplication(options)` creates an Express app
   with JSON parsing, URL encoding, trace-ID middleware, health endpoints
   (`/health/live`, `/health/ready`), user API routes, and problem details
-  error handling. `startAPI(app)` creates an HTTP server with SIGTERM/SIGINT
-  graceful shutdown. Defined in `event-store-express`.
+  error handling. `startAPI(app)` creates an HTTP server and registers no
+  signal handlers; `stopAPI(server)` closes it, ending open connections (SSE).
+  `onShutdown(handler)` (from Emmett, with its PR #406 fix) registers the
+  app's shutdown once: one listener per signal, each handler run once per
+  shutdown, a second signal exits. Defined in `event-store-express`.
 - **Trace-ID middleware** — reads `x-request-id` from the incoming request;
   if present, echoes it on the response; if absent, generates a UUID v4
   via `crypto.randomUUID()`. Always on by default, opt-out via
@@ -304,6 +311,17 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 7. **Poolers.** Advisory locks require session-mode connections. Do not add
    code paths that assume a transaction-mode pooler (PgBouncer, Supavisor,
    RDS Proxy) unless using `rowLocks()`.
+
+## Keeping step with Emmett
+
+`UPSTREAM.md` records what we adapted from Emmett (the file map), the Emmett
+paths we watch, the baseline commit and every Emmett PR reviewed. At the start
+of every phase, run `pnpm upstream:emmett`: it lists the Emmett PRs merged since
+the baseline that touch a watched path and aren't in the review log. Triage each
+into the log (take, pattern, later, n/a). A "take" is ported by intent, never
+merged or cherry-picked: Emmett's tests translated first, then the change, in a
+commit `upstream: emmett#<pr> <title>`, with a `NOTICE` entry for new adapted
+code. Move the baseline once every PR before it is logged.
 
 ## Branching rules — mandatory
 

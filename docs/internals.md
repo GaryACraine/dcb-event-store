@@ -294,7 +294,7 @@ When a notification arrives, `subscribe()` immediately re-polls. The poll interv
 
 **Channel name:** The bookmark table name (e.g. `"_handler_bookmarks"`).
 
-**When sent:** `runHandler` sends a notification each time it advances a handler's bookmark:
+**When sent:** `runHandler` sends a notification each time it advances a handler's bookmark, whether past an event it handled or, when caught up, past events it doesn't handle:
 
 ```sql
 SELECT pg_notify('_handler_bookmarks', 'myHandler:42')
@@ -305,7 +305,17 @@ The payload format is `handlerName:position`. The colon delimiter is why handler
 **Consumer:** `waitUntilProcessed()` uses this channel to detect when a projection has caught up. It uses a two-phase strategy:
 
 1. **Fast poll phase** -- three quick checks with backoff (5ms, 15ms, 30ms). Most events process in under 50ms, so this avoids holding a LISTEN connection for the common case.
-2. **Slow path** -- establishes `LISTEN` before checking, then loops with 100ms poll intervals. The LISTEN-before-check ordering prevents a TOCTOU race where a notification fires between the check and LISTEN.
+2. **Slow path** -- establishes `LISTEN` before checking, then loops with 100ms poll intervals. The LISTEN-before-check ordering prevents a TOCTOU race where a notification fires between the check and LISTEN. One listener serves the whole wait, woken only by this handler's notifications.
+
+### Checkpoint meaning (phase 18)
+
+A processor subscribes with a filtered query (only the event types its handler handles), a DCB improvement over Emmett, whose processors read every message and filter in memory. Emmett stores the checkpoint at the last message *read*; ours used to store the last event *handled*. So after a write the projection doesn't handle, its bookmark stayed behind that write's position forever, and `waitUntilProcessed` on it timed out.
+
+`subscribe` now reports, through `onCaughtUp`, the position it has seen everything up to: the read barrier's high-water mark for its query, when a read cycle yielded nothing past the last event. The barrier is safe for the query's keys (no matching event at or below it is still in flight), so moving the checkpoint there skips nothing; the subscription takes the barrier fresh, not from the hwm cache, because a cached hwm can be ahead in a test suite that restarts the sequence. The processor stores it with the usual CAS update and NOTIFY. The cost is one checkpoint UPDATE per idle processor after an unrelated append; they already woke and read.
+
+### Listener hygiene
+
+A long-lived subscription registers one `notification`, one `error` and one `abort` listener for its life and removes them when it ends; an idle wait only arms a timer. A listener registered per wait outlives it whenever the timer wins (Emmett PR #405's lesson): before phase 18 an idle subscription gained about ten a second, hidden by `setMaxListeners(0)`.
 
 ---
 
