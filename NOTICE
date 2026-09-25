@@ -24,3 +24,11 @@ Emmett's `postgreSQLProcessor.ts`, `processorsLocks.ts`,
 adaptation uses plain `sequence_position` checkpoints (no composite
 transaction_id/global_position), a distinct `P:` advisory lock namespace, and
 tag/boundary-based event queries.
+
+The graceful shutdown registration (`onShutdown` in event-store-express) is
+adapted from Emmett's `utils/lifecycle/gracefulShutdown.ts`, including the
+single process listener per signal from Emmett PR #406. The DCB version runs
+each handler once per shutdown and exits on a second signal.
+
+What else was adapted, and how each Emmett change since is reviewed, is
+recorded in UPSTREAM.md.

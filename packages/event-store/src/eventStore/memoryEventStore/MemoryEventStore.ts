@@ -142,6 +142,8 @@ export class MemoryEventStore implements EventStore {
 
         try {
             while (!signal?.aborted) {
+                // Every append is complete, so the store's last position is how far this read sees.
+                const head = lastPosition(this.events)
                 let hadEvents = false
                 for await (const event of this.read(query, { after: position })) {
                     yield event
@@ -149,6 +151,12 @@ export class MemoryEventStore implements EventStore {
                     hadEvents = true
                 }
                 if (hadEvents) continue
+
+                if (head.isAfter(position)) {
+                    await options?.onCaughtUp?.(head)
+                    position = head
+                    continue
+                }
 
                 // Wait for append or abort
                 await new Promise<void>(resolve => {

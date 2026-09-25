@@ -1,7 +1,2 @@
-export class WaitTimeoutError extends Error {
-    constructor(handlerName: string, position: string, timeoutMs: number) {
-        super(`Timeout: handler "${handlerName}" did not reach position ${position} within ${timeoutMs}ms`)
-        this.name = "WaitTimeoutError"
-        Object.setPrototypeOf(this, WaitTimeoutError.prototype)
-    }
-}
+// Moved to core (phase 18) so the HTTP layer can recognise it; re-exported here so existing imports keep working.
+export { WaitTimeoutError } from "@dcb-es/event-store"

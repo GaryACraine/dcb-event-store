@@ -4,6 +4,7 @@ import {
     NotFoundError,
     ValidationError,
     IllegalStateError,
+    WaitTimeoutError,
     AppendConditionError,
     Query
 } from "@dcb-es/event-store"
@@ -37,6 +38,14 @@ describe("toProblemDetails", () => {
         expect(problem.status).toBe(422)
         expect(problem.title).toBe("Unprocessable Entity")
         expect(problem.detail).toBe("Course is already full")
+    })
+
+    it("maps WaitTimeoutError to 504 (phase 18)", () => {
+        const problem = toProblemDetails(new WaitTimeoutError("CourseProjection", "7", 5000))
+
+        expect(problem.status).toBe(504)
+        expect(problem.title).toBe("Gateway Timeout")
+        expect(problem.detail).toBe('Timeout: handler "CourseProjection" did not reach position 7 within 5000ms')
     })
 
     it("maps AppendConditionError to 409", () => {

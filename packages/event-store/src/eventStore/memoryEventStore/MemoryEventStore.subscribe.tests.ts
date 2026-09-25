@@ -121,4 +121,77 @@ describe("MemoryEventStore.subscribe", () => {
         expect(events[0].event.type).toBe("Historical")
         expect(events[1].event.type).toBe("Live")
     })
+
+    describe("onCaughtUp (phase 18)", () => {
+        const drive = (query: Query, after?: SequencePosition) => {
+            const controller = new AbortController()
+            const log: string[] = []
+            const done = (async () => {
+                for await (const ev of store.subscribe(query, {
+                    after,
+                    signal: controller.signal,
+                    onCaughtUp: position => {
+                        log.push(`caughtUp ${position.toString()}`)
+                    }
+                })) {
+                    log.push(`event ${ev.event.type} ${ev.position.toString()}`)
+                }
+            })()
+            return {
+                log,
+                stop: async () => {
+                    controller.abort()
+                    await done
+                }
+            }
+        }
+        const settle = () => new Promise(r => setTimeout(r, 20))
+
+        test("reports the store's last position when only unrelated events were appended", async () => {
+            const sub = drive(Query.fromItems([{ types: ["A"] }]))
+            await store.append({ events: event("B") })
+            await store.append({ events: event("B") })
+            await settle()
+            await sub.stop()
+
+            // Both appends may land before the subscription wakes; either way it ends caught up at 2, having
+            // yielded nothing.
+            expect(sub.log.at(-1)).toBe("caughtUp 2")
+            expect(sub.log.every(line => line.startsWith("caughtUp"))).toBe(true)
+        })
+
+        test("yields a matching event before reporting a position past it", async () => {
+            await store.append({ events: event("A") })
+            await store.append({ events: event("B") })
+            const sub = drive(Query.fromItems([{ types: ["A"] }]))
+            await settle()
+            await sub.stop()
+
+            expect(sub.log).toEqual(["event A 1", "caughtUp 2"])
+        })
+
+        test("doesn't report when nothing lies past `after`", async () => {
+            await store.append({ events: event("B") })
+            const sub = drive(Query.fromItems([{ types: ["A"] }]), SequencePosition.fromString("1"))
+            await settle()
+            await sub.stop()
+
+            expect(sub.log).toEqual([])
+        })
+
+        test("an idle subscription leaves no listeners behind", async () => {
+            const controller = new AbortController()
+            const sub = store.subscribe(Query.all(), { signal: controller.signal })
+            const pending = sub.next()
+            await settle()
+            await store.append({ events: event("A") })
+            await pending
+            const next = sub.next()
+            await settle()
+            controller.abort()
+            await next
+
+            expect(store["emitter"].listenerCount("append")).toBe(0)
+        })
+    })
 })

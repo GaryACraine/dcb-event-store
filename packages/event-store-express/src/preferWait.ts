@@ -1,7 +1,8 @@
 import type { NextFunction, Request, Response } from "express"
-import { SequencePosition } from "@dcb-es/event-store"
+import { SequencePosition, WaitTimeoutError } from "@dcb-es/event-store"
 import { sendProblem } from "./responses.js"
 
+/** Waits until the read model has caught up with `position`; throws `WaitTimeoutError` (a 504) when it doesn't in time. */
 export type WaitFunction = (position: SequencePosition, timeoutMs: number) => Promise<void>
 
 export interface PreferWaitOptions {
@@ -32,6 +33,9 @@ function parseIfNoneMatch(ifNoneMatchHeader: string | undefined): SequencePositi
         return undefined
     }
 }
+
+const isWaitTimeout = (err: unknown): boolean =>
+    err instanceof WaitTimeoutError || (err instanceof Error && err.name === "WaitTimeoutError")
 
 export function preferWait(options: PreferWaitOptions): (req: Request, res: Response, next: NextFunction) => void {
     const defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -68,8 +72,10 @@ export function preferWait(options: PreferWaitOptions): (req: Request, res: Resp
             delete req.headers["if-none-match"]
             next()
         } catch (err: unknown) {
-            // Distinguish timeout from other errors
-            if (err instanceof Error && err.message.includes("timeout")) {
+            // A wait that ran out of time is a 504; anything else is the error handler's. Matched by class (or by
+            // name, for a second installed copy of the core package), not by message: the old
+            // `message.includes("timeout")` missed the library's own "Timeout: …" and caught connection timeouts.
+            if (isWaitTimeout(err)) {
                 sendProblem(res, 504, {
                     type: "about:blank",
                     title: "Gateway Timeout",

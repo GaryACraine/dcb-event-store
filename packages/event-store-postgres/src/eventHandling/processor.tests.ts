@@ -3,6 +3,7 @@ import { AnyEvent, TaggedEvent, Tags } from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { ensureHandlersInstalled } from "./ensureHandlersInstalled.js"
 import { createProcessor } from "./processor.js"
+import { waitUntilProcessed } from "./waitUntilProcessed.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
 
 const event = (type: string, tags: Tags = Tags.fromObj({ e: "1" }), data: unknown = {}): TaggedEvent<AnyEvent> => ({
@@ -530,5 +531,166 @@ describe("processor", () => {
         const result = await pool.query(`SELECT version, instance_id FROM ${TABLE} WHERE handler_id = $1`, [HANDLER])
         expect(Number(result.rows[0].version)).toBe(2) // initial 1 + 1 event
         expect(result.rows[0].instance_id).toBe(myInstanceId)
+    })
+
+    describe("the checkpoint means 'has seen everything up to X' (phase 18)", () => {
+        // Emmett stores a processor's checkpoint at the last message it read, whether it handled it or not. Our
+        // processor reads only the events it handles, so without `onCaughtUp` its checkpoint stayed on the last one
+        // it handled, and a read-your-writes wait on any later position timed out.
+        const bookmark = async (handler: string) =>
+            Number(
+                (await pool.query(`SELECT last_sequence_position FROM ${TABLE} WHERE handler_id = $1`, [handler]))
+                    .rows[0].last_sequence_position
+            )
+        const onlyA =
+            (seen: string[] = []) =>
+            () => ({
+                when: {
+                    A: async ({ position }: { position: { toString(): string } }) => {
+                        seen.push(position.toString())
+                    }
+                }
+            })
+
+        test("unrelated events move the checkpoint, and a wait on their position returns at once", async () => {
+            const HANDLER = "proc-caught-up"
+            await ensureHandlersInstalled(pool, [HANDLER], TABLE)
+            const controller = new AbortController()
+            const { promise } = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: onlyA(),
+                pollIntervalMs: 20,
+                signal: controller.signal
+            })
+
+            await store.append({ events: event("B") })
+            const position = await store.append({ events: event("B") })
+            const start = Date.now()
+            await waitUntilProcessed(pool, HANDLER, position, { timeoutMs: 2000 })
+            const waited = Date.now() - start
+
+            controller.abort()
+            await promise
+            expect(waited).toBeLessThan(1000)
+            expect(await bookmark(HANDLER)).toBe(2)
+        })
+
+        test("a handled event is processed before the checkpoint passes it", async () => {
+            const HANDLER = "proc-caught-up-order"
+            await ensureHandlersInstalled(pool, [HANDLER], TABLE)
+            const bookmarkWhileHandling: number[] = []
+            const controller = new AbortController()
+            const { promise } = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: () => ({
+                    when: {
+                        A: async () => {
+                            bookmarkWhileHandling.push(await bookmark(HANDLER))
+                            await new Promise(r => setTimeout(r, 100))
+                        }
+                    }
+                }),
+                pollIntervalMs: 20,
+                signal: controller.signal
+            })
+
+            await store.append({ events: event("B") })
+            await store.append({ events: event("A") })
+            const last = await store.append({ events: event("B") })
+            await waitUntilProcessed(pool, HANDLER, last, { timeoutMs: 3000 })
+
+            controller.abort()
+            await promise
+            // When A (at 2) was handled, the checkpoint was at most 1.
+            expect(bookmarkWhileHandling.length).toBe(1)
+            expect(bookmarkWhileHandling[0]).toBeLessThan(2)
+            expect(await bookmark(HANDLER)).toBe(3)
+        })
+
+        test("a restart resumes from the advanced checkpoint and handles only what's new", async () => {
+            const HANDLER = "proc-caught-up-restart"
+            await ensureHandlersInstalled(pool, [HANDLER], TABLE)
+            const first: string[] = []
+            const controller1 = new AbortController()
+            const p1 = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: onlyA(first),
+                pollIntervalMs: 20,
+                signal: controller1.signal
+            })
+            await store.append({ events: event("A") })
+            const b = await store.append({ events: event("B") })
+            await waitUntilProcessed(pool, HANDLER, b, { timeoutMs: 2000 })
+            controller1.abort()
+            await p1.promise
+
+            await store.append({ events: event("A") })
+            const second: string[] = []
+            const p2 = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: onlyA(second),
+                stopAfter: 1
+            })
+            await p2.promise
+
+            expect(first).toEqual(["1"])
+            expect(second).toEqual(["3"])
+        })
+
+        test("each advance notifies waiters", async () => {
+            const HANDLER = "proc-caught-up-notify"
+            await ensureHandlersInstalled(pool, [HANDLER], TABLE)
+            const listener = await pool.connect()
+            const notifications: string[] = []
+            listener.on("notification", msg => {
+                if (msg.payload?.startsWith(`${HANDLER}:`)) notifications.push(msg.payload)
+            })
+            await listener.query(`LISTEN ${TABLE}`)
+            const controller = new AbortController()
+            const { promise } = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: onlyA(),
+                pollIntervalMs: 20,
+                signal: controller.signal
+            })
+            try {
+                const b = await store.append({ events: event("B") })
+                await waitUntilProcessed(pool, HANDLER, b, { timeoutMs: 2000 })
+                await new Promise(r => setTimeout(r, 100))
+            } finally {
+                controller.abort()
+                await promise
+                await listener.query(`UNLISTEN ${TABLE}`)
+                listener.release()
+            }
+            expect(notifications).toEqual([`${HANDLER}:1`])
+        })
+
+        test("a checkpoint moved by another instance stops the processor when it next advances", async () => {
+            const HANDLER = "proc-caught-up-mismatch"
+            await ensureHandlersInstalled(pool, [HANDLER], TABLE)
+            const { promise } = createProcessor({
+                pool,
+                eventStore: store,
+                processorName: HANDLER,
+                handlerFactory: onlyA(),
+                pollIntervalMs: 20
+            })
+            await new Promise(r => setTimeout(r, 50))
+            await pool.query(`UPDATE ${TABLE} SET version = version + 10 WHERE handler_id = $1`, [HANDLER])
+            await store.append({ events: event("B") })
+
+            await expect(promise).rejects.toThrow(/version mismatch/)
+        })
     })
 })

@@ -28,3 +28,17 @@ export class IllegalStateError extends DcbError {
         super(message, "ILLEGAL_STATE", 422)
     }
 }
+
+/**
+ * A wait for a handler to reach a position ran out of time (`waitUntilProcessed`). A 504: the request was fine, the
+ * read model didn't catch up in time. In core so an HTTP layer can recognise it without depending on Postgres.
+ */
+export class WaitTimeoutError extends DcbError {
+    constructor(handlerName: string, position: string, timeoutMs: number) {
+        super(
+            `Timeout: handler "${handlerName}" did not reach position ${position} within ${timeoutMs}ms`,
+            "WAIT_TIMEOUT",
+            504
+        )
+    }
+}

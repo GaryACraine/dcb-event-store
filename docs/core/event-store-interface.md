@@ -144,6 +144,7 @@ interface SubscribeOptions {
   after?: SequencePosition
   pollIntervalMs?: number
   signal?: AbortSignal
+  onCaughtUp?: (position: SequencePosition) => void | Promise<void>
 }
 ```
 
@@ -152,6 +153,7 @@ interface SubscribeOptions {
 | `after` | `SequencePosition.initial()` | Start yielding events after this position. Events at or before this position are skipped. |
 | `pollIntervalMs` | -- | Polling interval for implementations that poll. The Postgres implementation uses `pg_notify` and does not poll by default. |
 | `signal` | -- | An `AbortSignal` to stop the subscription. When aborted, the generator returns cleanly. |
+| `onCaughtUp` | -- | Called when the subscription has yielded every event matching its query up to `position`, and `position` lies past the last event yielded (what came after didn't match). The subscription continues from there. Called only when the position advances, not on every idle poll; awaited; a throw ends the subscription. The Postgres store reports the read barrier's high-water mark, so an event still being written is never passed; the memory store reports its last position. A processor stores it as its checkpoint (phase 18). |
 
 ---
 

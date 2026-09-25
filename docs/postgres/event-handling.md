@@ -149,11 +149,13 @@ The returned `promise` resolves when the signal is aborted (after completing the
    COMMIT
    ```
 
-5. **On abort:** The loop exits cleanly after the current event's transaction completes.
+5. **When caught up:** the subscription reads only the events the handler handles. When the events after the last one handled didn't match (another projection's events), the subscription reports how far it has seen (`onCaughtUp`) and the bookmark moves there, with the same CAS update and NOTIFY. So a bookmark means **"has seen everything up to X"**, as an Emmett checkpoint does, not "the last event handled": `waitUntilProcessed` works for any position, including a write this projection doesn't handle (phase 18; before it, such a wait timed out).
+
+6. **On abort:** The loop exits cleanly after the current event's transaction completes.
 
 ### NOTIFY on bookmark advance
 
-After each event is processed, `runHandler` fires:
+After each event is processed, and each time the bookmark moves past events the handler doesn't handle, `runHandler` fires:
 
 ```sql
 SELECT pg_notify('_handler_bookmarks', 'courseProjection:42')
@@ -201,6 +203,8 @@ async function waitUntilProcessed(
 
 Resolves when the handler's bookmark is at or past the given position. Throws `WaitTimeoutError` if the deadline is exceeded.
 
+Any position works, including one this handler has no event at: the bookmark moves past events the handler doesn't handle (see "When caught up" above). A page that writes one thing and then reads several read models can wait on each of them with the write's position.
+
 ### Algorithm
 
 The function uses a two-phase strategy that optimizes for the common case (handler processes the event within milliseconds) while still handling slow handlers efficiently:
@@ -226,8 +230,10 @@ If the fast phase did not succeed:
 3. Loop until deadline:
    a. Check the bookmark (after LISTEN is established -- no missed notifications)
    b. If reached, return
-   c. Wait for either a notification or a 100ms timeout
+   c. Wait for either a notification **for this handler** or a 100ms timeout (other handlers' notifications on the shared channel are ignored)
    d. On notification, re-check immediately
+
+   One notification listener serves the whole wait and is removed at the end. (Before phase 18 each 100ms wait added one that outlived it: a `MaxListenersExceededWarning` after about a second.)
 4. If deadline exceeded, throw `WaitTimeoutError`
 5. `UNLISTEN` and release the connection
 
@@ -236,11 +242,16 @@ The LISTEN-before-check ordering prevents the race where a notification fires be
 ### WaitTimeoutError
 
 ```typescript
-class WaitTimeoutError extends Error {
+// @dcb-es/event-store (re-exported by @dcb-es/event-store-postgres)
+class WaitTimeoutError extends DcbError {
     constructor(handlerName: string, position: string, timeoutMs: number)
     name: "WaitTimeoutError"
+    code: "WAIT_TIMEOUT"
+    status: 504
 }
 ```
+
+It lives in core so the HTTP layer can recognise it without depending on Postgres: `toProblemDetails` maps it to a 504, and `preferWait` answers 504 for it (and passes any other error on, even one whose message mentions a timeout).
 
 Thrown when the handler does not reach the target position within the timeout. The error message includes the handler name, target position, and timeout value:
 

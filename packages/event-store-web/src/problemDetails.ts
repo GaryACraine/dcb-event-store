@@ -21,7 +21,8 @@ const httpStatusTitles: Record<number, string> = {
     412: "Precondition Failed",
     422: "Unprocessable Entity",
     428: "Precondition Required",
-    500: "Internal Server Error"
+    500: "Internal Server Error",
+    504: "Gateway Timeout"
 }
 
 function titleForStatus(status: number): string {

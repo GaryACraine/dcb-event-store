@@ -21,7 +21,13 @@ export {
     command
 } from "./src/eventStore/Command.js"
 export { DefaultRecord } from "./src/eventStore/types.js"
-export { DcbError, NotFoundError, ValidationError, IllegalStateError } from "./src/eventStore/errors.js"
+export {
+    DcbError,
+    NotFoundError,
+    ValidationError,
+    IllegalStateError,
+    WaitTimeoutError
+} from "./src/eventStore/errors.js"
 
 export { Query, QueryItem } from "./src/eventStore/Query.js"
 export { Tags } from "./src/eventStore/Tags.js"

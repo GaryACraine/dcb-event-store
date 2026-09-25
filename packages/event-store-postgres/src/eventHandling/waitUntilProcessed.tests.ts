@@ -1,11 +1,18 @@
 import { Pool } from "pg"
-import { AnyEvent, TaggedEvent, SequencePosition, Tags } from "@dcb-es/event-store"
+import {
+    AnyEvent,
+    TaggedEvent,
+    SequencePosition,
+    Tags,
+    WaitTimeoutError as CoreWaitTimeoutError
+} from "@dcb-es/event-store"
 import { PostgresEventStore } from "../eventStore/PostgresEventStore.js"
 import { runHandler } from "./runHandler.js"
 import { waitUntilProcessed } from "./waitUntilProcessed.js"
 import { WaitTimeoutError } from "./WaitTimeoutError.js"
 import { ensureHandlersInstalled } from "./ensureHandlersInstalled.js"
 import { getTestPgDatabasePool } from "@test/testPgDbPool"
+import { trackConnections, mostListeners } from "@test/trackConnections"
 
 const event = (type: string): TaggedEvent<AnyEvent> => ({
     event: { type, data: {} } as AnyEvent,
@@ -109,5 +116,63 @@ describe("waitUntilProcessed", () => {
 
         controller.abort()
         await promise.catch(() => {})
+    })
+
+    describe("listeners (phase 18, Emmett PR #405's lesson)", () => {
+        test("a long wait holds one notification listener and gives no MaxListeners warning", async () => {
+            const clients = trackConnections(pool)
+            const warnings: string[] = []
+            const onWarning = (w: Error) => warnings.push(w.name)
+            process.on("warning", onWarning)
+            let most = 0
+            const sampler = setInterval(() => (most = Math.max(most, mostListeners(clients, "notification"))), 20)
+            try {
+                // 1.5 s in the slow path is ~14 of its 100 ms waits.
+                await expect(
+                    waitUntilProcessed(pool, HANDLER, SequencePosition.fromString("1"), { timeoutMs: 1500 })
+                ).rejects.toThrow(WaitTimeoutError)
+            } finally {
+                clearInterval(sampler)
+                process.off("warning", onWarning)
+            }
+
+            expect(most).toBeLessThanOrEqual(1)
+            expect(mostListeners(clients, "notification")).toBe(0)
+            expect(warnings).not.toContain("MaxListenersExceededWarning")
+        })
+
+        test("another handler's notifications don't end the wait", async () => {
+            // A busy system notifies for every processor; only this handler's bookmark matters.
+            const done = waitUntilProcessed(pool, HANDLER, SequencePosition.fromString("5"), { timeoutMs: 600 })
+            const noise = setInterval(() => {
+                void pool.query("SELECT pg_notify('_handler_bookmarks', 'OtherHandler:9')").catch(() => {})
+            }, 10)
+            try {
+                await expect(done).rejects.toThrow(WaitTimeoutError)
+            } finally {
+                clearInterval(noise)
+            }
+        })
+
+        test("this handler's notification ends the wait without waiting out the poll", async () => {
+            const done = waitUntilProcessed(pool, HANDLER, SequencePosition.fromString("5"), { timeoutMs: 3000 })
+            await new Promise(r => setTimeout(r, 300))
+            await pool.query("UPDATE _handler_bookmarks SET last_sequence_position = 5 WHERE handler_id = $1", [
+                HANDLER
+            ])
+            const start = Date.now()
+            await pool.query(`SELECT pg_notify('_handler_bookmarks', '${HANDLER}:5')`)
+            await done
+
+            expect(Date.now() - start).toBeLessThan(90)
+        })
+    })
+
+    test("the timeout is the core WaitTimeoutError, a 504", async () => {
+        const err = await waitUntilProcessed(pool, HANDLER, SequencePosition.fromString("1"), { timeoutMs: 50 }).catch(
+            (e: unknown) => e
+        )
+        expect(err).toBeInstanceOf(CoreWaitTimeoutError)
+        expect(err).toMatchObject({ name: "WaitTimeoutError", status: 504, code: "WAIT_TIMEOUT" })
     })
 })

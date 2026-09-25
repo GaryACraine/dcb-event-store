@@ -32,7 +32,8 @@
         "// --- PI HARNESS INTEGRATIONS ---": "Run Pi terminal agent attached to local or cloud models",
         "pi:32b": "pi --model ollama/qwen2.5-coder:32b-instruct-q8_0",
         "pi:14b": "pi --model ollama/qwen2.5-coder:14b",
-        "pi:gemini": "pi --model google/gemini-2.5-flash"
+        "pi:gemini": "pi --model google/gemini-2.5-flash",
+        "upstream:emmett": "node scripts/emmett-upstream.mjs"
     },
     "devDependencies": {
         "@changesets/cli": "^2.30.0",
