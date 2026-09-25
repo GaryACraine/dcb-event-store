@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import express from "express"
 import request from "supertest"
-import { SequencePosition } from "@dcb-es/event-store"
+import { SequencePosition, WaitTimeoutError } from "@dcb-es/event-store"
 import { preferWait, type WaitFunction } from "./preferWait.js"
 
 function createApp(waitFn: WaitFunction, opts?: { defaultTimeoutMs?: number; maxTimeoutMs?: number }) {
@@ -72,8 +72,8 @@ describe("preferWait middleware", () => {
         expect(res.headers["preference-applied"]).toBe("wait")
     })
 
-    it("responds 504 when waitFn throws a timeout error", async () => {
-        const waitFn = vi.fn<WaitFunction>().mockRejectedValue(new Error("wait timeout exceeded"))
+    it("responds 504 when waitFn throws a WaitTimeoutError", async () => {
+        const waitFn = vi.fn<WaitFunction>().mockRejectedValue(new WaitTimeoutError("Projection", "3", 1000))
         const app = createApp(waitFn)
 
         const res = await request(app).get("/data").set("Prefer", "wait=1").set("If-None-Match", '"3"')
@@ -82,6 +82,41 @@ describe("preferWait middleware", () => {
         expect(res.headers["content-type"]).toContain("application/problem+json")
         expect(res.body.status).toBe(504)
         expect(res.body.title).toBe("Gateway Timeout")
+    })
+
+    it("responds 504 for the library's own timeout message, which starts with a capital T (phase 18)", async () => {
+        // The old check was `message.includes("timeout")`: waitUntilProcessed's "Timeout: handler …" didn't match,
+        // so a wait that ran out of time answered 500.
+        const err = new WaitTimeoutError("CourseProjection", "860", 5000)
+        expect(err.message.startsWith("Timeout:")).toBe(true)
+        const app = createApp(vi.fn<WaitFunction>().mockRejectedValue(err))
+
+        const res = await request(app).get("/data").set("Prefer", "wait=5").set("If-None-Match", '"860"')
+
+        expect(res.status).toBe(504)
+    })
+
+    it("responds 504 for a WaitTimeoutError from another copy of the core package", async () => {
+        // Two installed copies of @dcb-es/event-store make `instanceof` fail; the name still says what it is.
+        const foreign = Object.assign(new Error('Timeout: handler "P" did not reach position 3 within 10ms'), {
+            name: "WaitTimeoutError"
+        })
+        const app = createApp(vi.fn<WaitFunction>().mockRejectedValue(foreign))
+
+        const res = await request(app).get("/data").set("Prefer", "wait=1").set("If-None-Match", '"3"')
+
+        expect(res.status).toBe(504)
+    })
+
+    it("passes on other errors that merely mention a timeout (a connection timeout is a 500)", async () => {
+        const waitFn = vi
+            .fn<WaitFunction>()
+            .mockRejectedValue(new Error("Connection terminated due to connection timeout"))
+        const app = createApp(waitFn)
+
+        const res = await request(app).get("/data").set("Prefer", "wait=1").set("If-None-Match", '"3"')
+
+        expect(res.status).toBe(500)
     })
 
     it("respects maxTimeoutMs cap", async () => {
