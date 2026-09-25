@@ -126,7 +126,15 @@ export class PostgresEventStore implements EventStore {
         // Backwards reads have no gap problem: they scan from highest seq downwards,
         // and the danger of skipping past in-flight allocations doesn't apply.
         const upperBound = options?.backwards ? undefined : await this.barrierSnapshot(query)
+        yield* this.readBounded(query, options, upperBound)
+    }
 
+    /** A read capped at `upperBound` (the barrier's high-water mark); `subscribe` takes the snapshot itself. */
+    private async *readBounded(
+        query: Query,
+        options: ReadOptions | undefined,
+        upperBound: bigint | undefined
+    ): AsyncGenerator<SequencedEvent> {
         const client = await this.pool.connect()
         try {
             await client.query("BEGIN")
@@ -155,13 +163,21 @@ export class PostgresEventStore implements EventStore {
      */
     private async barrierSnapshot(query: Query): Promise<bigint> {
         const keys = this.lockStrategy.computeReaderKeys(query)
-        return this.hwmCache.get(keys, async () => {
-            const result = await this.pool.query(
-                `SELECT ${this.barrierFunctionName}($1::bigint[], $2::bigint[]) AS hwm`,
-                [keys.leafS, keys.intentX]
-            )
-            return BigInt(String(result.rows[0].hwm ?? "0"))
-        })
+        return this.hwmCache.get(keys, () => this.freshBarrierSnapshot(query))
+    }
+
+    /**
+     * The barrier without the cache. `subscribe` moves its cursor to the hwm when nothing matched, so it takes a
+     * fresh one: a cached hwm is only ever behind in production, but a test suite that restarts the sequence
+     * between tests would leave one ahead, and the cursor would jump past the next events.
+     */
+    private async freshBarrierSnapshot(query: Query): Promise<bigint> {
+        const keys = this.lockStrategy.computeReaderKeys(query)
+        const result = await this.pool.query(`SELECT ${this.barrierFunctionName}($1::bigint[], $2::bigint[]) AS hwm`, [
+            keys.leafS,
+            keys.intentX
+        ])
+        return BigInt(String(result.rows[0].hwm ?? "0"))
     }
 
     // ─── Subscribe ──────────────────────────────────────────────────
@@ -171,19 +187,39 @@ export class PostgresEventStore implements EventStore {
         let position = options?.after ?? SequencePosition.initial()
         const signal = options?.signal
 
-        const listener = await this.pool.connect()
-        listener.setMaxListeners(0)
+        // One listener of each kind for the subscription's life, removed when it ends. An idle wait only arms a
+        // timer: a listener registered per wait outlives it when the timer wins, and piles up (Emmett PR #405).
         let listenerError: Error | null = null
-        listener.on("error", err => {
+        let notified = false
+        let wake: (() => void) | null = null
+        const onNotification = () => {
+            notified = true
+            // A NOTIFY means a writer (here or on another instance) committed.
+            // Invalidate so the next iteration's barrier picks up the new state.
+            this.hwmCache.invalidateAll()
+            wake?.()
+        }
+        const onError = (err: Error) => {
             listenerError = err
-        })
+            wake?.()
+        }
+        const onAbort = () => wake?.()
+
+        const listener = await this.pool.connect()
+        listener.on("notification", onNotification)
+        listener.on("error", onError)
+        signal?.addEventListener("abort", onAbort)
 
         try {
             await listener.query(`LISTEN ${this.notifyChannel}`)
 
             while (!signal?.aborted) {
+                // A NOTIFY arriving from here on wakes the next wait at once, even while the read is running.
+                notified = false
+                const upperBound = await this.freshBarrierSnapshot(query)
+
                 let hadEvents = false
-                for await (const event of this.read(query, { after: position })) {
+                for await (const event of this.readBounded(query, { after: position }, upperBound)) {
                     yield event
                     position = event.position
                     hadEvents = true
@@ -192,28 +228,32 @@ export class PostgresEventStore implements EventStore {
                 if (hadEvents) continue
                 if (listenerError) throw listenerError
 
+                // Every matching event up to the barrier's high-water mark has been yielded, so the subscription
+                // has seen everything up to it. Report it when it moves past the last event yielded.
+                const seen = SequencePosition.fromString(upperBound.toString())
+                if (seen.isAfter(position)) {
+                    await options?.onCaughtUp?.(seen)
+                    position = seen
+                }
+
+                if (notified || signal?.aborted) continue
                 await new Promise<void>(resolve => {
-                    const timeout = setTimeout(resolve, pollInterval)
-                    const onNotification = () => {
+                    const timeout = setTimeout(() => done(), pollInterval)
+                    const done = () => {
                         clearTimeout(timeout)
-                        signal?.removeEventListener("abort", onAbort)
-                        // A NOTIFY means a writer (here or on another instance) committed.
-                        // Invalidate so the next iteration's barrier picks up the new state.
-                        this.hwmCache.invalidateAll()
+                        wake = null
                         resolve()
                     }
-                    const onAbort = () => {
-                        clearTimeout(timeout)
-                        listener.removeListener("notification", onNotification)
-                        resolve()
-                    }
-                    listener.once("notification", onNotification)
-                    signal?.addEventListener("abort", onAbort, { once: true })
+                    wake = done
                 })
             }
         } finally {
+            signal?.removeEventListener("abort", onAbort)
             await listener.query(`UNLISTEN ${this.notifyChannel}`).catch(() => {})
-            listener.release()
+            listener.removeListener("notification", onNotification)
+            listener.removeListener("error", onError)
+            // A connection that failed goes back broken, so the pool discards it.
+            listener.release(listenerError ?? undefined)
         }
     }
 

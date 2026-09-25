@@ -63,6 +63,14 @@ export interface SubscribeOptions {
     after?: SequencePosition
     pollIntervalMs?: number
     signal?: AbortSignal
+    /**
+     * Called when the subscription has seen every event matching its query up to `position`, and `position` lies
+     * past the last event it yielded (the events after it didn't match). The subscription continues from there.
+     * A processor stores it as its checkpoint, so a checkpoint means "has seen everything up to X", not "the last
+     * event handled". Called only when the position advances, not on every idle poll. A throw ends the
+     * subscription with that error.
+     */
+    onCaughtUp?: (position: SequencePosition) => void | Promise<void>
 }
 
 export interface EventStore {
