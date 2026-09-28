@@ -145,6 +145,7 @@ Rules:
 | 8 | `course-manager-cli-with-otel` | `course-manager-cli-with-projections` | Console span exporter showing append, read and projection spans |
 | 9 | `migrations-script` | — | Script applying migrations to an existing v1 schema |
 | 10 | `course-manager-web-api` | `course-manager-cli-with-projections` | The course manager as an HTTP API: commands with ETags and idempotency keys, read-model queries, an SSE event feed, `ApiSpecification` tests, OpenAPI document; README with a curl walkthrough |
+| 19 | `course-manager-cli-with-failure-policy` | `course-manager-cli-with-consumer` | A read model blocked by a bug, visible, then caught up once fixed; an audit handler that opts in to skip |
 | 11 | `course-manager-web-api-sliced` | `course-manager-web-api` | Vertical slice architecture: bounded contexts, global tag constants, one directory per slice, independent projections with private lookup collections |
 
 ### 0.7 Reference path shorthand
@@ -1179,7 +1180,7 @@ handler fails until a fix is deployed, shown blocked and then caught up, and an 
 | 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
-| 19 | `phase-19/processor-failure-policy` | in progress | N/A (no append/read/lock changes) |
+| 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 
