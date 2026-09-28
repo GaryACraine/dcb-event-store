@@ -3,7 +3,7 @@ import { Event, EventHandler, EventStore, Query, SequencedEvent, Tags } from "@d
 import { Projection } from "./projection.js"
 import { setProjectionStatus } from "./registry/projectionRegistry.js"
 import { acquireExclusiveProjectionLock } from "./projectionLock.js"
-import { createConsumer } from "../eventHandling/consumer.js"
+import { createProcessor } from "../eventHandling/processor.js"
 import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalled.js"
 
 export interface RebuildProjectionOptions {
@@ -22,7 +22,7 @@ export interface RebuildProjectionOptions {
  * Flow:
  * 1. Deactivate — acquire exclusive lock, set status to 'inactive',
  *    truncate read model, reset bookmark to position 0, commit.
- * 2. Replay — create a consumer with stopWhenCaughtUp: true that processes
+ * 2. Replay — run a processor with stopWhenCaughtUp: true that processes
  *    all events from the beginning, then stops.
  * 3. Reactivate — acquire exclusive lock, set status to 'active', commit.
  */
@@ -72,34 +72,34 @@ export async function rebuildProjection(options: RebuildProjectionOptions): Prom
 
     const eventTypes = projection.canHandle
 
-    const consumer = createConsumer({
+    // A rebuild is a job its caller waits on, so a handler error fails it ("stop") rather than blocking it (phase 19).
+    // The projection is told it's rebuilding, so an automation step can skip its work.
+    const replay = createProcessor({
         pool,
         eventStore,
         bookmarkTableName,
-        processors: [
-            {
-                processorName: name,
-                query: Query.fromItems([{ types: eventTypes }]),
-                handlerFactory: (txClient: PoolClient): EventHandler<Event, Tags> => ({
-                    when: Object.fromEntries(
-                        eventTypes.map(type => [
-                            type,
-                            async (event: SequencedEvent) => {
-                                await projection.handle([event], { client: txClient })
-                            }
-                        ])
-                    ) as EventHandler<Event, Tags>["when"]
-                }),
-                startFrom: "BEGINNING" as const,
-                batchSize: options.batchSize,
-                pollIntervalMs: options.pollIntervalMs,
-                stopWhenCaughtUp: true
-            }
-        ]
+        processorName: name,
+        query: Query.fromItems([{ types: eventTypes }]),
+        handlerFactory: (txClient: PoolClient): EventHandler<Event, Tags> => ({
+            when: Object.fromEntries(
+                eventTypes.map(type => [
+                    type,
+                    async (event: SequencedEvent) => {
+                        await projection.handle([event], { client: txClient, rebuilding: true })
+                    }
+                ])
+            ) as EventHandler<Event, Tags>["when"]
+        }),
+        startFrom: "BEGINNING",
+        batchSize: options.batchSize,
+        pollIntervalMs: options.pollIntervalMs,
+        stopWhenCaughtUp: true,
+        onError: "stop",
+        rebuilding: true
     })
 
     // Wait for replay to complete
-    await Promise.all(consumer.processors.map(p => p.promise))
+    await replay.promise
 
     // 3. Reactivate
     const reactivateClient = await pool.connect()

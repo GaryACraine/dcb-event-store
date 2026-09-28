@@ -31,7 +31,8 @@ export async function readCheckpoint(
 
 /**
  * CAS-based checkpoint store. Updates the bookmark only if the version matches,
- * preventing double-processing when a lock is lost (defense-in-depth).
+ * preventing double-processing when a lock is lost (defense-in-depth). A
+ * checkpoint also clears the processor's blocked status (phase 19).
  *
  * When called inside a per-event transaction (with a PoolClient), also fires
  * pg_notify for waitUntilProcessed compatibility.
@@ -49,7 +50,11 @@ export async function storeCheckpoint(
          SET last_sequence_position = $1,
              version = version + 1,
              instance_id = $2,
-             last_updated = now()
+             last_updated = now(),
+             blocked_error = NULL,
+             blocked_position = NULL,
+             blocked_attempts = 0,
+             blocked_since = NULL
          WHERE handler_id = $3
            AND version = $4`,
         [newPosition.toString(), instanceId, processorName, expectedVersion.toString()]

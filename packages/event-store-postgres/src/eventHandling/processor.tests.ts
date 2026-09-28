@@ -172,7 +172,8 @@ describe("processor", () => {
         expect(count).toBe(50)
     })
 
-    test("handler error → bookmark does not advance, promise rejects", async () => {
+    // The default is now retry (phase 19, failurePolicy.tests.ts); "stop" keeps the old behaviour.
+    test('handler error with onError "stop" → bookmark does not advance, promise rejects', async () => {
         const HANDLER = "proc-error"
         await ensureHandlersInstalled(pool, [HANDLER], TABLE)
 
@@ -188,7 +189,8 @@ describe("processor", () => {
                         throw new Error("handler exploded")
                     }
                 }
-            })
+            }),
+            onError: "stop"
         })
 
         await expect(promise).rejects.toThrow("handler exploded")

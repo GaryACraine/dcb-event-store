@@ -5,9 +5,32 @@ export { advisoryLocks, rowLocks } from "./src/eventStore/lockStrategy.js"
 export { runHandler } from "./src/eventHandling/runHandler.js"
 export type { HandlerRunnerOptions, RunningHandler } from "./src/eventHandling/runHandler.js"
 export { createProcessor } from "./src/eventHandling/processor.js"
-export type { ProcessorOptions, RunningProcessor } from "./src/eventHandling/processor.js"
+export type {
+    ProcessorOptions,
+    RunningProcessor,
+    ErrorAction,
+    OnHandlerError,
+    ProcessorLogger,
+    HandlerContext,
+    HandlerFactory
+} from "./src/eventHandling/processor.js"
 export { createConsumer } from "./src/eventHandling/consumer.js"
-export type { ConsumerOptions, ConsumerProcessorConfig, RunningConsumer } from "./src/eventHandling/consumer.js"
+export type {
+    ConsumerOptions,
+    ConsumerProcessorConfig,
+    RunningConsumer,
+    ConsumerErrorAction,
+    ConsumerOnHandlerError
+} from "./src/eventHandling/consumer.js"
+export type { Backoff } from "./src/eventHandling/backoff.js"
+export { readProcessorStatuses } from "./src/eventHandling/processorStatus.js"
+export type {
+    ProcessorState,
+    ProcessorStatus,
+    BlockedStatus,
+    RestartStatus,
+    StoredProcessorStatus
+} from "./src/eventHandling/processorStatus.js"
 export type { StartPosition } from "./src/eventHandling/startPositions.js"
 export { waitUntilProcessed } from "./src/eventHandling/waitUntilProcessed.js"
 export { WaitTimeoutError } from "./src/eventHandling/WaitTimeoutError.js"

@@ -121,6 +121,7 @@ describe("consumer", () => {
         const consumer = createConsumer({
             pool,
             eventStore: store,
+            logger: { error: () => {}, warn: () => {} },
             processors: [
                 {
                     processorName: HANDLER_BAD,
@@ -130,7 +131,8 @@ describe("consumer", () => {
                                 throw new Error("bad processor")
                             }
                         }
-                    })
+                    }),
+                    backoff: { initialMs: 20, maxMs: 20 }
                 },
                 {
                     processorName: HANDLER_GOOD,
@@ -146,13 +148,16 @@ describe("consumer", () => {
             ]
         })
 
-        const results = await Promise.allSettled(consumer.processors.map(p => p.promise))
-
-        // Bad processor should reject
-        expect(results[0].status).toBe("rejected")
-        // Good processor should resolve
-        expect(results[1].status).toBe("fulfilled")
+        // Good processor resolves; the bad one blocks (phase 19: it retries, never rejects) until stopped
+        await consumer.processors[1].promise
         expect(processed).toEqual(["good"])
+        for (let i = 0; i < 100 && consumer.status()[0].state !== "blocked"; i++)
+            await new Promise(r => setTimeout(r, 10))
+        expect(consumer.status()[0].state).toBe("blocked")
+
+        await consumer.stop()
+        const results = await Promise.allSettled(consumer.processors.map(p => p.promise))
+        expect(results.every(r => r.status === "fulfilled")).toBe(true)
     })
 
     test("empty processors array throws", () => {

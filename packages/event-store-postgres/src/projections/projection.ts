@@ -3,6 +3,8 @@ import { SequencedEvent } from "@dcb-es/event-store"
 
 export interface ProjectionContext {
     client: PoolClient
+    /** True while `rebuildProjection` replays it; absent or false otherwise (phase 19). */
+    rebuilding?: boolean
 }
 
 export interface Projection {
