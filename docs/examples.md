@@ -10,6 +10,7 @@ The repository includes CLI applications that implement the [course subscription
 | `course-manager-cli-with-idempotent-commands` | Event stream (on-the-fly) | Idempotent appends via `message_id`, metadata, `recordedAt` |
 | `course-manager-cli-with-readmodel` | PostgreSQL read model | Projections, `runHandler`, `waitUntilProcessed` |
 | `course-manager-cli-with-consumer` | PostgreSQL read model | `createConsumer`, processor lock, CAS checkpoints, `startFrom`, graceful `stop()` |
+| `course-manager-cli-with-failure-policy` | PostgreSQL read model | `onError` (retry by default, opt-in skip), backoff, blocked `status()`, `readProcessorStatuses`, restarts |
 | `course-manager-cli-with-projections` | PostgreSQL read model | `Projection`, `rawSqlProjection`, `projectionToProcessor`, `ProjectionSpec` |
 | `course-manager-cli-with-pongo` | Pongo JSONB documents | `pongoProjection`, Pongo collections, JSONB document read models |
 | `course-manager-cli-with-inline-projection` | Pongo JSONB documents | `inlineProjections`, atomic read model updates, no consumer/waitUntilProcessed |
@@ -292,7 +293,7 @@ This example extends the read model example by replacing `runHandler` with `crea
 ### What it adds
 
 - **`createConsumer`** replaces `runHandler` for starting the projection handler. The consumer wraps one or more named processors with shared lifecycle management.
-- **Processor instance lock** -- each processor acquires a session-scoped advisory lock (`P:` namespace), preventing two instances of the same processor from running concurrently. A second instance's promise rejects with "Processor lock not acquired".
+- **Processor instance lock** -- each processor acquires a session-scoped advisory lock (`P:` namespace), preventing two instances of the same processor from running concurrently. A second instance's processor ends with "Processor lock not acquired"; since phase 19 its consumer keeps trying to start it (a standby).
 - **CAS-versioned checkpoints** -- the bookmark table gains `version`, `instance_id`, and `last_updated` columns. Checkpoint updates use `WHERE version = $expected` (compare-and-swap) as defense-in-depth against double-processing if a lock is lost.
 - **Start-position policies** -- `startFrom: "BEGINNING"` (default) resumes from the stored checkpoint. `startFrom: "CURRENT"` skips all historical events for a brand-new handler, useful for projections that only care about future events.
 - **Graceful `stop()`** -- `consumer.stop()` aborts all processors via their shared `AbortController` and resolves when all are done, replacing manual `AbortController` + `await promise.catch(() => {})`.
@@ -330,6 +331,67 @@ Shutdown is a single call: `await consumer.stop()`.
 | Start position | Always from stored bookmark | Configurable: `BEGINNING` or `CURRENT` |
 | Shutdown | `controller.abort()` + `await promise.catch(() => {})` | `await consumer.stop()` |
 | Stop condition | Signal abort only | Signal abort + `stopAfter` event count |
+| Events, DecisionModels, Projection, Repository, Cli | Unchanged | Unchanged |
+
+---
+
+## course-manager-cli-with-failure-policy
+
+**Location:** [`examples/course-manager-cli-with-failure-policy/`](../examples/course-manager-cli-with-failure-policy/)
+
+This example extends the consumer example with the processor failure policy of Phase 19. Before it, a handler that threw ended its processor, and the consumer example exited the process to notice. Now a failing read model **blocks and retries the same event** until it succeeds (Axon 5's default), says so, and loses nothing; a handler where losing an event is acceptable **opts in to skip** (Emmett's `skip`). The domain, the read model and its repository are unchanged.
+
+### What it adds
+
+- **`onError`** per processor: `"retry"` (the default), `"skip"`, or a function `(error, event) => "retry" | "skip"`. `createProcessor` also has `"stop"`, which rejects its promise as before (`rebuildProjection` and `runHandler` use it).
+- **`backoff: { initialMs, maxMs }`** -- the wait between retries: 1 s by default, doubling to 60 s. Only the blocked processor waits; the others carry on.
+- **A visible blocked status** -- `consumer.status()` reports each processor as `running`, `blocked` (the error, the event's position and type, the attempts, since when, the next attempt), `restarting` or `stopped`. The bookmark row holds the same (`blocked_error`, `blocked_position`, `blocked_attempts`, `blocked_since`), read with `readProcessorStatuses(pool)`. The next checkpoint clears it.
+- **A consumer never loses a processor** -- one that ends with an error (its lock held by another instance, a lost connection) is started again after the same backoff.
+- **A second handler, [`CourseAuditLog`](../examples/course-manager-cli-with-failure-policy/src/api/CourseAuditLog.ts)** -- a short audit line per course change, run with `onError: "skip"`: a title too long for its line is logged and skipped.
+
+### Entry point wiring
+
+[`index.ts`](../examples/course-manager-cli-with-failure-policy/index.ts) runs both processors and reports a blocked one instead of exiting:
+
+```typescript
+const consumer = createConsumer({
+    pool,
+    eventStore,
+    processors: [
+        {
+            processorName: PROJECTION_NAME,
+            handlerFactory: client => PostgresCourseSubscriptionsProjection(client),
+            startFrom: "BEGINNING",
+            backoff: { initialMs: 1000, maxMs: 30_000 } // retry is the default
+        },
+        {
+            processorName: AUDIT_LOG_NAME,
+            handlerFactory: client => CourseAuditLog(client),
+            startFrom: "BEGINNING",
+            onError: "skip"
+        }
+    ]
+})
+
+setInterval(() => {
+    for (const status of consumer.status()) if (status.blocked) console.warn(status.processorName, status.blocked)
+}, 10_000)
+```
+
+### Failure policy tests
+
+[`src/failurePolicy.tests.ts`](../examples/course-manager-cli-with-failure-policy/src/failurePolicy.tests.ts) deploys a bug in the read model's capacity handler: the processor blocks on that event and says so, the audit log carries on, and the command's own `waitUntilProcessed` finishes once the bug is fixed, with the capacity in the read model. A second test shows the audit log skipping a line it can't write and writing the next.
+
+### How it differs from the consumer example
+
+| Aspect | Consumer example | Failure policy example |
+|--------|-----------------|------------------------|
+| A handler throws | The processor ends; `index.ts` exits the process | The processor blocks and retries the same event with backoff (`onError: "retry"`) |
+| Losing an event is acceptable | Not expressible | `onError: "skip"` logs and moves past it |
+| Seeing a failure | The rejected promise | `consumer.status()`, the bookmark row, `readProcessorStatuses` |
+| Lock held by another instance | The processor's promise rejects | The consumer keeps trying to start it |
+| Bookmark columns | `version`, `instance_id`, `last_updated` | Adds `blocked_error`, `blocked_position`, `blocked_attempts`, `blocked_since` |
+| Handlers | The read model | The read model and `CourseAuditLog` |
 | Events, DecisionModels, Projection, Repository, Cli | Unchanged | Unchanged |
 
 ---

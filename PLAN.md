@@ -145,6 +145,7 @@ Rules:
 | 8 | `course-manager-cli-with-otel` | `course-manager-cli-with-projections` | Console span exporter showing append, read and projection spans |
 | 9 | `migrations-script` | — | Script applying migrations to an existing v1 schema |
 | 10 | `course-manager-web-api` | `course-manager-cli-with-projections` | The course manager as an HTTP API: commands with ETags and idempotency keys, read-model queries, an SSE event feed, `ApiSpecification` tests, OpenAPI document; README with a curl walkthrough |
+| 19 | `course-manager-cli-with-failure-policy` | `course-manager-cli-with-consumer` | A read model blocked by a bug, visible, then caught up once fixed; an audit handler that opts in to skip |
 | 11 | `course-manager-web-api-sliced` | `course-manager-web-api` | Vertical slice architecture: bounded contexts, global tag constants, one directory per slice, independent projections with private lookup collections |
 
 ### 0.7 Reference path shorthand
@@ -1102,6 +1103,54 @@ The leak tests failed on the old code with the real numbers: 65 notification lis
 
 **Grade:** Medium. **Touches locks:** No (the read barrier is called, not changed).
 
+## 11g. Phase 19 — Processor failure policy
+
+**Why.** The eventmodelers DCB kit (its PLAN 15.2, ADR-031) makes automations first class: a to-do list and an
+automation that works it, run by one processor. Today a handler that throws rolls its event back and **ends its
+processor**: the promise rejects, and `createConsumer` never starts it again. In the kit nothing awaits that promise, so
+a failed read model or automation stops silently and the app carries on without it. ADR-031 chose Axon 5's default
+instead, with Emmett's skip as the opt-in.
+
+**Research (for ADR-031).**
+- **Axon 5:** the default `PropagatingErrorHandler` fails fast. The batch aborts, the segment is claimed again after a
+  backoff that grows, so the same event is retried and only that processor waits. "Log and continue" is an
+  `ErrorHandler` you write. There is no dead-letter queue yet.
+- **Emmett** (`core/processors/processors.ts`): a throw stops the processor (`STOP`), and it resumes from the same
+  point on its next start. A handler may return `skip()` to log and continue. It has no dead-letter queue.
+- `pnpm upstream:emmett` on 2026-09-28: no new Emmett PRs to triage (baseline `e9d85982`).
+
+**Changes.**
+- **`onError` on a processor:** `"retry"` (the default), `"skip"`, `"stop"`, or a function `(error, event) =>` one of
+  them.
+  - **retry (fail fast):** roll back, log, wait (1 s doubling to 60 s by default, `backoff: { initialMs, maxMs }`) and
+    handle the same event again. Only this processor waits; the others carry on. The wait ends early on abort.
+  - **skip:** roll back the handler's writes, log a warning, and move the checkpoint past the event.
+  - **stop:** reject the processor's promise, as before this phase. `rebuildProjection` and `runHandler` (the
+    backward-compatible wrapper) keep it.
+  - Only errors thrown by the handler follow `onError`. A lost lock or a checkpoint version mismatch still ends the
+    processor, because carrying on could handle an event twice.
+- **A visible blocked status.**
+  - `RunningProcessor.status()` says `running`, `blocked` (with the error, the event's position and type, the attempts,
+    since when and the next attempt) or `stopped`. `RunningConsumer.status()` lists them all.
+  - The bookmark row records it too (`blocked_error`, `blocked_position`, `blocked_attempts`, `blocked_since`, added by
+    `ensureHandlersInstalled`), so another instance or `psql` can see it. The next checkpoint clears it.
+    `readProcessorStatuses(pool)` reads them.
+- **`createConsumer` never loses a processor.** When one ends with an error (a lost lock, a lost connection, the lock
+  held by another instance), the consumer logs it and starts it again after the same backoff, until it's stopped.
+- **The handler is told when its processor is rebuilding.** `handlerFactory(client, { rebuilding })`, and
+  `ProjectionContext.rebuilding`, which `rebuildProjection` sets. The kit's automation step uses it to skip its work
+  while its to-do list is rebuilt.
+- **A logger option** (`logger`, `console` by default) for the retry, skip and restart messages.
+- `projectionToProcessor` passes `onError` and `backoff` through.
+
+**Not changed:** the public `EventStore` interface; append, read and locks (no bench needed). The checkpoint's
+`UPDATE` also clears the blocked columns.
+
+**Example:** `course-manager-cli-with-failure-policy`, from `course-manager-cli-with-consumer`: a read model whose
+handler fails until a fix is deployed, shown blocked and then caught up, and an audit handler that skips.
+
+**Grade:** Medium. **Touches locks:** No.
+
 ---
 
 ## 12. Status
@@ -1131,6 +1180,7 @@ The leak tests failed on the old code with the real numbers: 65 notification lis
 | 15 | `phase-15/projection-canhandle-simplification` | complete | N/A (no append/read/lock changes) |
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
+| 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 

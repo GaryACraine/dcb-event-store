@@ -33,7 +33,9 @@ export function runHandler(options: HandlerRunnerOptions): RunningHandler {
         bookmarkTableName: options.bookmarkTableName,
         signal: options.signal,
         batchSize: 1,
-        startFrom: "BEGINNING"
+        startFrom: "BEGINNING",
+        // Backward compatible: a handler error still rejects the promise (the processor's default is now retry).
+        onError: "stop"
     })
 
     return { promise: processor.promise }

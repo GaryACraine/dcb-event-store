@@ -6,6 +6,9 @@ import { ensureHandlersInstalled } from "../eventHandling/ensureHandlersInstalle
 import { rawSqlProjection } from "./rawSqlProjection.js"
 import { rebuildProjection } from "./rebuildProjection.js"
 import { readProjectionStatus } from "./registry/projectionRegistry.js"
+import { Projection } from "./projection.js"
+import { projectionToProcessor } from "./projectionAdapter.js"
+import { createConsumer } from "../eventHandling/consumer.js"
 
 const event = (
     type: string,
@@ -158,6 +161,59 @@ describe("rebuildProjection", () => {
 
         const result = await pool.query("SELECT name FROM rebuild_items ORDER BY name")
         expect(result.rows.map(r => r.name)).toEqual(["after-1", "before-1", "before-2"])
+    })
+
+    describe("phase 19", () => {
+        const recording = (name: string, seen: boolean[], fail = false): Projection => {
+            const inner = makeProjection(name)
+            return {
+                ...inner,
+                handle: async (events, context) => {
+                    seen.push(context.rebuilding ?? false)
+                    if (fail) throw new Error("rebuild handler failed")
+                    await inner.handle(events, context)
+                }
+            }
+        }
+        const init = async (projection: Projection) => {
+            const client = await pool.connect()
+            try {
+                await projection.init!(client)
+            } finally {
+                client.release()
+            }
+        }
+
+        test("the projection is told it's rebuilding; run by its processor, it isn't", async () => {
+            const seen: boolean[] = []
+            const projection = recording("rebuild-context", seen)
+            await ensureHandlersInstalled(pool, [projection.name], "_handler_bookmarks")
+            await init(projection)
+            await store.append({ events: event("ItemAdded", { name: "item-1" }) })
+
+            await rebuildProjection({ pool, eventStore: store, projection })
+            expect(seen).toEqual([true])
+
+            await store.append({ events: event("ItemAdded", { name: "item-2" }) })
+            const consumer = createConsumer({
+                pool,
+                eventStore: store,
+                processors: [{ ...projectionToProcessor(projection), stopAfter: 1 }]
+            })
+            await Promise.all(consumer.processors.map(p => p.promise))
+            expect(seen).toEqual([true, false])
+        })
+
+        test("a handler that fails still fails the rebuild (it doesn't retry for ever)", async () => {
+            const projection = recording("rebuild-fails", [], true)
+            await ensureHandlersInstalled(pool, [projection.name], "_handler_bookmarks")
+            await init(projection)
+            await store.append({ events: event("ItemAdded", { name: "item-1" }) })
+
+            await expect(rebuildProjection({ pool, eventStore: store, projection })).rejects.toThrow(
+                "rebuild handler failed"
+            )
+        })
     })
 
     test("inline projection skipped during rebuild (status is inactive)", async () => {

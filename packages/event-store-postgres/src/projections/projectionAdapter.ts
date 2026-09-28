@@ -1,6 +1,7 @@
 import { PoolClient } from "pg"
 import { Event, EventHandler, Query, SequencedEvent, Tags } from "@dcb-es/event-store"
-import { ConsumerProcessorConfig } from "../eventHandling/consumer.js"
+import { ConsumerOnHandlerError, ConsumerProcessorConfig } from "../eventHandling/consumer.js"
+import { Backoff } from "../eventHandling/backoff.js"
 import { StartPosition } from "../eventHandling/startPositions.js"
 import { Projection } from "./projection.js"
 import { tryAcquireSharedProjectionLock } from "./projectionLock.js"
@@ -10,6 +11,8 @@ export interface ProjectionProcessorOptions {
     startFrom?: StartPosition
     stopAfter?: number
     batchSize?: number
+    onError?: ConsumerOnHandlerError
+    backoff?: Backoff
 }
 
 export function projectionToProcessor(
@@ -22,7 +25,7 @@ export function projectionToProcessor(
     return {
         processorName: projection.name,
         query: Query.fromItems([{ types: eventTypes }]),
-        handlerFactory: (client: PoolClient): EventHandler<Event, Tags> => ({
+        handlerFactory: (client: PoolClient, { rebuilding }): EventHandler<Event, Tags> => ({
             when: Object.fromEntries(
                 eventTypes.map(type => [
                     type,
@@ -33,7 +36,7 @@ export function projectionToProcessor(
                             projectionVersion
                         )
                         if (!acquired || !isActive) return
-                        await projection.handle([event], { client })
+                        await projection.handle([event], { client, rebuilding })
                     }
                 ])
             ) as EventHandler<Event, Tags>["when"]
@@ -41,6 +44,8 @@ export function projectionToProcessor(
         pollIntervalMs: options?.pollIntervalMs,
         startFrom: options?.startFrom,
         stopAfter: options?.stopAfter,
-        batchSize: options?.batchSize
+        batchSize: options?.batchSize,
+        onError: options?.onError,
+        backoff: options?.backoff
     }
 }

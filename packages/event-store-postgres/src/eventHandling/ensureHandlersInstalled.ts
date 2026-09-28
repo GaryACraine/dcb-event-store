@@ -14,6 +14,14 @@ export const ensureHandlersInstalled = async (pool: Pool, handlerIds: string[], 
         ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ NOT NULL DEFAULT now();
     `)
 
+    // Phase 19: the event a processor is blocked on, for anyone to see (idempotent)
+    await pool.query(`
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS blocked_error TEXT;
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS blocked_position BIGINT;
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS blocked_attempts INT NOT NULL DEFAULT 0;
+        ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS blocked_since TIMESTAMPTZ;
+    `)
+
     await registerHandlers(pool, handlerIds, tableName)
 }
 

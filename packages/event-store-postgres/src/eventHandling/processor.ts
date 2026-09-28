@@ -1,16 +1,42 @@
 import { Pool, PoolClient } from "pg"
-import { EventHandler, EventStore, Query, SequencePosition, Tags } from "@dcb-es/event-store"
+import { EventHandler, EventStore, Query, SequencedEvent, SequencePosition, Tags } from "@dcb-es/event-store"
 import { acquireProcessorLock, ProcessorLockHandle } from "./processorLock.js"
 import { readCheckpoint, storeCheckpoint, Checkpoint } from "./checkpointer.js"
 import { resolveStartPosition, StartPosition } from "./startPositions.js"
+import { Backoff, backoffDelay, errorMessage, sleep } from "./backoff.js"
+import { BlockedStatus, ProcessorState, ProcessorStatus, recordBlocked } from "./processorStatus.js"
 import { v4 as uuid } from "uuid"
+
+/**
+ * What a processor does when its handler throws (phase 19):
+ * - `retry` (the default): roll back, log, wait (`backoff`) and handle the same event again. The processor is blocked
+ *   until it succeeds; other processors carry on. Axon 5's default.
+ * - `skip`: roll back, log a warning and move the checkpoint past the event. Only where losing it is acceptable
+ *   (Emmett's `skip`).
+ * - `stop`: roll back and reject the processor's promise.
+ */
+export type ErrorAction = "retry" | "skip" | "stop"
+export type OnHandlerError = ErrorAction | ((error: unknown, event: SequencedEvent) => ErrorAction)
+
+export interface ProcessorLogger {
+    error: (message: string, error?: unknown) => void
+    warn: (message: string, error?: unknown) => void
+}
+
+/** Passed to `handlerFactory` with the transaction client. */
+export interface HandlerContext {
+    /** True while the processor replays for a rebuild: an automation step skips its work (the kit's ADR-031). */
+    rebuilding: boolean
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type HandlerFactory = (client: PoolClient, context: HandlerContext) => EventHandler<any, any>
 
 export interface ProcessorOptions {
     pool: Pool
     eventStore: EventStore
     processorName: string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    handlerFactory: (client: PoolClient) => EventHandler<any, any>
+    handlerFactory: HandlerFactory
     query?: Query
     bookmarkTableName?: string
     batchSize?: number
@@ -26,11 +52,33 @@ export interface ProcessorOptions {
     stopWhenCaughtUp?: boolean
     signal?: AbortSignal
     instanceId?: string
+    /** What to do when the handler throws. Default `"retry"`. */
+    onError?: OnHandlerError
+    /** The wait between retries. Default 1 s, doubling to 60 s. */
+    backoff?: Backoff
+    /** Where retries and skips are reported. Default `console`. */
+    logger?: ProcessorLogger
+    /** Tell the handler it's replaying for a rebuild (`HandlerContext.rebuilding`). */
+    rebuilding?: boolean
 }
 
 export interface RunningProcessor {
     promise: Promise<void>
     instanceId: string
+    status: () => ProcessorStatus
+}
+
+/** The error a handler threw, kept apart from the processor's own (lock, checkpoint), which always end it. */
+class HandlerFailure extends Error {
+    constructor(readonly error: unknown) {
+        super(errorMessage(error))
+    }
+}
+
+export function assertProcessorName(processorName: string): void {
+    if (processorName.includes(":")) {
+        throw new Error(`Processor name "${processorName}" must not contain ":" (used as notification delimiter)`)
+    }
 }
 
 /**
@@ -45,52 +93,44 @@ export interface RunningProcessor {
  * (persistent cursor + LISTEN wakeup). The processor lock, CAS checkpoint,
  * and lifecycle management are layered on top.
  *
- * The returned promise resolves when the signal is aborted or stopAfter is
- * reached, and rejects on unrecoverable error (handler throw, lock stolen).
+ * A handler that throws is handled by `onError` (retry by default, so the
+ * processor blocks on that event and says so in `status()` and its bookmark
+ * row). The returned promise resolves when the signal is aborted or stopAfter
+ * is reached, and rejects on an unrecoverable error (lock not acquired, lock
+ * stolen, or a handler error with `onError: "stop"`).
  */
 export function createProcessor(options: ProcessorOptions): RunningProcessor {
-    const { pool, eventStore, processorName, handlerFactory, signal, stopAfter } = options
-    const tableName = options.bookmarkTableName ?? "_handler_bookmarks"
-    const pollIntervalMs = options.pollIntervalMs ?? 100
-    const startFrom = options.startFrom ?? "BEGINNING"
+    const { processorName } = options
     const instanceId = options.instanceId ?? uuid()
+    assertProcessorName(processorName)
 
-    if (processorName.includes(":")) {
-        throw new Error(`Processor name "${processorName}" must not contain ":" (used as notification delimiter)`)
-    }
-
+    const status: ProcessorStatus = { processorName, state: "starting" }
     const promise = runProcessor({
-        pool,
-        eventStore,
-        processorName,
-        handlerFactory,
-        query: options.query,
-        tableName,
-        pollIntervalMs,
-        startFrom,
-        stopAfter,
-        stopWhenCaughtUp: options.stopWhenCaughtUp,
-        signal,
-        instanceId
+        ...options,
+        tableName: options.bookmarkTableName ?? "_handler_bookmarks",
+        pollIntervalMs: options.pollIntervalMs ?? 100,
+        startFrom: options.startFrom ?? "BEGINNING",
+        onError: options.onError ?? "retry",
+        logger: options.logger ?? console,
+        rebuilding: options.rebuilding ?? false,
+        instanceId,
+        status
+    }).finally(() => {
+        status.state = "stopped"
     })
 
-    return { promise, instanceId }
+    return { promise, instanceId, status: () => ({ ...status }) }
 }
 
-interface InternalProcessorOptions {
-    pool: Pool
-    eventStore: EventStore
-    processorName: string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    handlerFactory: (client: PoolClient) => EventHandler<any, any>
-    query?: Query
+interface InternalProcessorOptions extends ProcessorOptions {
     tableName: string
     pollIntervalMs: number
     startFrom: StartPosition
-    stopAfter?: number
-    stopWhenCaughtUp?: boolean
-    signal?: AbortSignal
+    onError: OnHandlerError
+    logger: ProcessorLogger
+    rebuilding: boolean
     instanceId: string
+    status: ProcessorStatus
 }
 
 async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
@@ -104,8 +144,16 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         startFrom,
         stopAfter,
         signal,
-        instanceId
+        instanceId,
+        onError,
+        logger,
+        status
     } = opts
+    const context: HandlerContext = { rebuilding: opts.rebuilding }
+    const setState = (state: ProcessorState, blocked?: BlockedStatus) => {
+        status.state = state
+        status.blocked = blocked
+    }
 
     // 1. Acquire session-scoped processor lock
     const lock: ProcessorLockHandle = await acquireProcessorLock(pool, processorName)
@@ -136,6 +184,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             }
             currentVersion++
         }
+        status.position = position
 
         // 4. Build query from handler (or use pre-built query from options)
         let query: Query
@@ -144,7 +193,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         } else {
             let sampleHandler
             try {
-                sampleHandler = handlerFactory(null as unknown as PoolClient)
+                sampleHandler = handlerFactory(null as unknown as PoolClient, context)
             } catch {
                 throw new Error(`handlerFactory for "${processorName}" must not access the client during construction.`)
             }
@@ -156,19 +205,24 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                           sampleHandler.tagFilter ? { types, tags: sampleHandler.tagFilter as Tags } : { types }
                       ])
         }
+        setState("running")
 
         // 5. Process events
         let processedCount = 0
 
-        const processEvent = async (event: import("@dcb-es/event-store").SequencedEvent): Promise<void> => {
+        const processEvent = async (event: SequencedEvent): Promise<void> => {
             const client = await pool.connect()
             try {
                 await client.query("BEGIN")
 
-                const handler = handlerFactory(client)
+                const handler = handlerFactory(client, context)
                 const fn = handler.when[event.event.type]
                 if (fn) {
-                    await fn(event)
+                    try {
+                        await fn(event)
+                    } catch (err) {
+                        throw new HandlerFailure(err)
+                    }
                 }
 
                 const storeResult = await storeCheckpoint(
@@ -180,15 +234,13 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                     instanceId
                 )
                 if (storeResult === "VERSION_MISMATCH") {
-                    await client.query("ROLLBACK").catch(() => {})
-                    client.release()
                     throw new Error(`Checkpoint version mismatch for "${processorName}" — lock may have been stolen`)
                 }
 
                 await client.query("COMMIT")
                 position = event.position
+                status.position = position
                 currentVersion++
-                processedCount++
             } catch (err) {
                 await client.query("ROLLBACK").catch(() => {})
                 throw err
@@ -197,13 +249,68 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             }
         }
 
+        // Move the checkpoint without handling anything: past events the query didn't match, or a skipped one.
+        const advanceTo = async (seen: SequencePosition): Promise<void> => {
+            const storeResult = await storeCheckpoint(pool, processorName, tableName, seen, currentVersion, instanceId)
+            if (storeResult === "VERSION_MISMATCH") {
+                throw new Error(`Checkpoint version mismatch for "${processorName}" — lock may have been stolen`)
+            }
+            position = seen
+            status.position = position
+            currentVersion++
+        }
+
+        // Handle one event under `onError`. False when the processor was stopped while blocked on it.
+        const handle = async (event: SequencedEvent): Promise<boolean> => {
+            let blocked: BlockedStatus | undefined
+            for (let attempt = 1; ; attempt++) {
+                try {
+                    await processEvent(event)
+                    break
+                } catch (err) {
+                    if (!(err instanceof HandlerFailure)) throw err
+                    const action = typeof onError === "function" ? onError(err.error, event) : onError
+                    const where = `event ${event.position.toString()} (${event.event.type})`
+                    if (action === "stop") throw err.error
+                    if (action === "skip") {
+                        logger.warn(`Processor "${processorName}" skipped ${where}: ${err.message}`, err.error)
+                        await advanceTo(event.position)
+                        break
+                    }
+                    const delay = backoffDelay(attempt, opts.backoff)
+                    const now = new Date()
+                    blocked = {
+                        error: err.message,
+                        position: event.position,
+                        eventType: event.event.type,
+                        attempts: attempt,
+                        since: blocked?.since ?? now,
+                        nextAttemptAt: new Date(now.getTime() + delay)
+                    }
+                    setState("blocked", blocked)
+                    logger.error(
+                        `Processor "${processorName}" is blocked on ${where}: ${err.message}. ` +
+                            `Retrying in ${delay} ms (attempt ${attempt}).`,
+                        err.error
+                    )
+                    await recordBlocked(pool, processorName, tableName, blocked, currentVersion).catch(recordErr =>
+                        logger.error(`Processor "${processorName}" couldn't record that it is blocked`, recordErr)
+                    )
+                    if (!(await sleep(delay, signal))) return false
+                }
+            }
+            setState("running")
+            processedCount++
+            return true
+        }
+
         if (opts.stopWhenCaughtUp) {
             // Read-loop mode: process all available events then exit
             while (!signal?.aborted) {
                 let hadEvents = false
                 for await (const event of eventStore.read(query, { after: position })) {
                     if (signal?.aborted) break
-                    await processEvent(event)
+                    if (!(await handle(event))) break
                     hadEvents = true
                     if (stopAfter !== undefined && processedCount >= stopAfter) break
                 }
@@ -213,21 +320,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             // The checkpoint means "has seen everything up to X", as Emmett's does: when the events after the last
             // one handled didn't match the query, it moves past them. Without it, a wait for a position the
             // processor has no events at would time out (PLAN phase 18).
-            const onCaughtUp = async (seen: SequencePosition): Promise<void> => {
-                const storeResult = await storeCheckpoint(
-                    pool,
-                    processorName,
-                    tableName,
-                    seen,
-                    currentVersion,
-                    instanceId
-                )
-                if (storeResult === "VERSION_MISMATCH") {
-                    throw new Error(`Checkpoint version mismatch for "${processorName}" — lock may have been stolen`)
-                }
-                position = seen
-                currentVersion++
-            }
+            const onCaughtUp = advanceTo
 
             // Subscribe mode: persistent cursor + LISTEN wakeup
             for await (const event of eventStore.subscribe(query, {
@@ -237,7 +330,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                 onCaughtUp
             })) {
                 if (signal?.aborted) break
-                await processEvent(event)
+                if (!(await handle(event))) break
                 if (stopAfter !== undefined && processedCount >= stopAfter) break
             }
         }

@@ -12,6 +12,7 @@ Event handling in the Postgres adapter provides:
 - **`waitUntilProcessed()`** -- wait for a handler to reach a specific position (for synchronous read-after-write)
 - **`ensureHandlersInstalled()`** -- idempotent schema and handler registration
 - **`HandlerCatchup`** -- batch-oriented handler runner (prefer `runHandler` for new code)
+- **The processor failure policy** -- what `createProcessor` and `createConsumer` do when a handler throws (phase 19)
 
 ---
 
@@ -27,6 +28,10 @@ CREATE TABLE IF NOT EXISTS _handler_bookmarks (
     last_sequence_position BIGINT
 );
 ```
+
+Later phases add columns with `ADD COLUMN IF NOT EXISTS`: `version`, `instance_id` and `last_updated` (phase 3,
+the CAS checkpoint), and `blocked_error`, `blocked_position`, `blocked_attempts` and `blocked_since` (phase 19, the event a
+processor is blocked on; cleared by its next checkpoint).
 
 The table name defaults to `_handler_bookmarks` but can be overridden via the `bookmarkTableName` option on `runHandler()` and `waitUntilProcessed()`, or via the `tablePrefix` option on `HandlerCatchup`.
 
@@ -167,7 +172,34 @@ The payload format is `<handlerName>:<position>`. This notification is consumed 
 
 - If the handler factory accesses the `client` during construction (before any event is processed), `runHandler` throws immediately with a diagnostic message.
 - If a handler is not found in the bookmarks table, `runHandler` throws immediately.
-- If any event's transaction fails, the promise rejects. The bookmark is not advanced. On restart, the handler replays from the last committed position.
+- If any event's transaction fails, the promise rejects. The bookmark is not advanced. On restart, the handler replays from the last committed position. `runHandler` keeps this for backward compatibility (`onError: "stop"`); `createProcessor` and `createConsumer` retry by default, below.
+
+---
+
+## The processor failure policy
+
+What `createProcessor` and `createConsumer` do when a handler throws (phase 19; the eventmodelers kit's ADR-031, after
+Axon 5's default and Emmett's `skip`). The handler's transaction is always rolled back first.
+
+| `onError` | What happens | Use it for |
+|---|---|---|
+| `"retry"` (default) | Log, wait (`backoff`), handle the **same event** again. The processor is blocked until it succeeds; the others carry on. | Read models and automations: nothing is lost, and a deployed fix picks up where it stopped |
+| `"skip"` | Log a warning and move the checkpoint past the event | Handlers where losing an event is acceptable (an audit line, a metric) |
+| `"stop"` | Reject the processor's promise (`createProcessor` only) | Jobs a caller waits on: `rebuildProjection`, `runHandler` |
+| `(error, event) => …` | Decide per error | Skipping one known kind of error, retrying the rest |
+
+- **`backoff: { initialMs, maxMs }`** -- 1000 ms doubling to 60000 ms by default. An abort ends the wait at once.
+- **Only the handler's errors follow `onError`.** A lost lock or a checkpoint version mismatch ends the processor, since
+  carrying on could handle an event twice.
+- **Status.** `processor.status()` and `consumer.status()` report `starting`, `running`, `blocked` (with `error`,
+  `position`, `eventType`, `attempts`, `since`, `nextAttemptAt`), `restarting` or `stopped`. The bookmark row holds the
+  blocked details for any instance to see: `readProcessorStatuses(pool)`.
+- **A consumer never loses a processor.** When one ends with an error (another instance holds its lock, a lost
+  connection), the consumer logs it and starts it again after the same backoff, until `stop()`. Its promises settle only
+  on stop.
+- **Rebuilds.** `handlerFactory(client, { rebuilding })` and `ProjectionContext.rebuilding` tell a handler it's being
+  replayed by `rebuildProjection`, so an automation step can skip its work while its to-do list is rebuilt.
+- **`logger`** (`{ error, warn }`, `console` by default) receives the retry, skip and restart messages.
 
 ---
 
