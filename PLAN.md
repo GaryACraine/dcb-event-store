@@ -1153,6 +1153,106 @@ handler fails until a fix is deployed, shown blocked and then caught up, and an 
 
 ---
 
+## 11h. Phase 20 — Background processors share two connections per app
+
+**Why.** Each processor in `subscribe` mode holds two pooled connections for as long as it runs:
+- **its lock:** `acquireProcessorLock` takes a session-level `pg_try_advisory_lock`, so its client can't go back to
+  the pool (`eventHandling/processorLock.ts`);
+- **its wake-up:** `PostgresEventStore.subscribe` takes a client of its own and `LISTEN`s on it.
+
+A slow `waitUntilProcessed` also holds a `LISTEN` client of its own while it waits. So an app's connections grow with
+its read models and automations: 2 × processors, plus requests.
+
+In the eventmodelers kit's licensing project, 11 processors on a pool of 20 hung startup. The kit now sizes the pool
+from the processors (kit PR #169), but a whole model would hold roughly 60 to 90 connections per app copy. A small
+hosted Postgres allows about 60 to 100 in all, and a transaction-mode pooler can't carry these sessions (invariant 7).
+Kit ADR-047 (Proposed), kit issue #170.
+
+**Research (for ADR-047).**
+- **Emmett** (`emmett-postgresql`):
+  - **no `LISTEN`:** a consumer polls with one message source (`pullingFrequencyInMs`, `batchSize`) and passes each
+    batch to all its processors;
+  - **ownership is a lease row:** `emt_try_acquire_processor_lock` takes a *transaction-scoped* advisory lock only to
+    claim the processor's row (`processor_instance_id`, `status`, `last_updated`). Another instance may take the row
+    over once it's stopped, or `last_updated` is older than the lock timeout (300 s by default). Every checkpoint
+    renews it, and no connection is held.
+- **Axon:** token claims with an owner and a timestamp, the same pattern. A session lock held for the processor's
+  life (ours) is the less common one.
+- **Ours today:**
+  - `subscribe` already polls every `pollIntervalMs` (100 ms), so `LISTEN` only shortens the wait;
+  - the checkpoint already records `instance_id` and refuses a stale write by version (CAS);
+  - **nothing listens for the lock client's `error`.** A processor whose lock connection drops runs on, unowned,
+    until its next checkpoint fails the CAS. An unhandled `error` on a checked-out client may end the process:
+    prove which first.
+- `pnpm upstream:emmett` on 2026-10-06: #410 (logging), #411 and #412 (test containers). None is about connections or
+  ownership. Triage them in `UPSTREAM.md` when the phase is built.
+
+**Decision (kit ADR-047): two steps.** This phase is step 1. Step 2 (lease rows and polling only, Emmett's and Axon's
+pattern) is done only if the app must run behind a transaction-mode pooler. The append path already has `rowLocks()`
+for that.
+
+**Changes.**
+- **`NotificationListener`** (new, `eventStore/notificationListener.ts`): one client per `PostgresEventStore`.
+  - It's opened when the first subscriber or waiter registers, counted per registration, and closed when the last
+    one goes, or on `close()`.
+  - It `LISTEN`s on the event channel (`notifyChannel`) and on bookmark tables as waiters ask for them, and passes
+    each notification to the registrations for that channel.
+  - **On `error` or `end`:** it tells every registration (so a subscriber polls at its interval, as now), reconnects
+    after a backoff, `LISTEN`s again, and clears `hwmCache`, because notifications were missed meanwhile.
+- **`subscribe`** registers with the listener in place of `pool.connect()` and `LISTEN`. Its loop is unchanged: the
+  barrier snapshot, the bounded read, `onCaughtUp`, and the poll timer that a notification cuts short. A listener
+  error no longer ends the subscription, which falls back to polling.
+- **`waitUntilProcessed`'s slow path** registers on the bookmark table's channel through the listener. It gets it
+  from the event store (an option), or falls back to its own client when none is given, for backward compatibility.
+  The fast poll phase is unchanged.
+- **`LockHolder`** (new, `eventHandling/lockHolder.ts`): one session client that holds many `P:` keys.
+  - `acquire(processorName)` runs `pg_try_advisory_lock` and gives back a handle with `release()`, which runs
+    `pg_advisory_unlock` for that key only.
+  - It has a `signal` that aborts when the client errors or ends, and every lock it held is then lost.
+  - The client closes when its last lock is released.
+  - Calls on the one client are serialised (pg queues them), and each takes microseconds.
+- **`acquireProcessorLock(pool, name, holder?)`:** with a holder, it takes the key through it; without one, it uses
+  a holder of its own (one client, as today).
+- **`createConsumer`** makes one `LockHolder` for its processors and passes it to each.
+- **`runProcessor`** links the holder's signal into its own abort, so a lost lock connection ends the run with
+  "lock connection lost". The consumer's supervision (Phase 19) starts it again after its backoff, with a new holder
+  client and the key taken again. The CAS checkpoint stays as the backstop.
+
+**Tests.**
+- **First:** what a terminated lock client does today (`pg_terminate_backend`): whether the process crashes, or the
+  processor runs on.
+- 100 subscribers on one store hold one listener client: count them with `pg_stat_activity`.
+- **The listener is terminated:** events still arrive by polling, then the listener reconnects and notifications
+  are fast again. No event is missed or repeated.
+- **The lock holder is terminated:** every processor of the consumer stops and restarts, and no event's handler is
+  committed twice. Run it with a handler that records each event once (unique index).
+- **Two consumers, A and B:** A's lock holder is terminated, B takes the processors over, and A's restart finds them
+  held.
+- `waitUntilProcessed` (slow path) through the listener, and without it.
+- The existing consumer, processor, subscribe and failure-policy suites pass unchanged.
+
+**Docs.**
+- `postgres-locking-and-transactions-for-dcb.md` §8.8: the lock holder, what a lost connection does, and the
+  connection count.
+- `docs/postgres/event-handling.md`: the listener, and the slow path.
+- `CLAUDE.md` invariant 7: "a consumer needs 2 session connections; see kit ADR-047 for transaction-mode poolers".
+
+**Not changed:** the `EventStore` interface; append and read; the lock keys and the `P:` namespace; the checkpoint
+table.
+
+**Example:** `course-manager-cli-with-consumer` prints the connections it holds at startup. It should be 2 whatever
+the number of processors.
+
+**Then, in the kit:**
+- `poolSize` drops `CONNECTIONS_PER_PROCESSOR`;
+- the `startReadModels` check counts consumers;
+- licensing starts on a pool of 10.
+
+**Grade:** Medium. **Touches locks:** yes, but ownership locks only (not the append path's boundary locks). Run the
+quick pg bench on main and on the branch, and record the delta.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1181,6 +1281,7 @@ handler fails until a fix is deployed, shown blocked and then caught up, and an 
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
+| 20 | `phase-20/shared-connections` | planned (kit ADR-047, issue #170) | to run: ownership locks change, the append path doesn't |
 
 ## 13. Known issues
 
