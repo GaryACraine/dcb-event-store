@@ -1360,7 +1360,7 @@ work belongs outside the transaction (the kit runs it on Temporal, ADR-033).
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
 | 20 | `phase-20/shared-connections-build` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
-| 21 | `phase-21/concurrency-governors` | in review | BENCH |
+| 21 | `phase-21/concurrency-governors` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 3986/7426 vs 4028/7407 events/s; raw-throughput 26110 vs 27174); the same three scenarios fail on both (known issue 13.2) |
 
 ## 13. Known issues
 
