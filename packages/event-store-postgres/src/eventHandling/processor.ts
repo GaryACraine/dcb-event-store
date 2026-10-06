@@ -2,6 +2,7 @@ import { Pool, PoolClient } from "pg"
 import { EventHandler, EventStore, Query, SequencedEvent, SequencePosition, Tags } from "@dcb-es/event-store"
 import { acquireProcessorLock, ProcessorLockHandle } from "./processorLock.js"
 import { LockHolder } from "./lockHolder.js"
+import { Semaphore } from "../eventStore/semaphore.js"
 import { readCheckpoint, storeCheckpoint, Checkpoint } from "./checkpointer.js"
 import { resolveStartPosition, StartPosition } from "./startPositions.js"
 import { Backoff, backoffDelay, errorMessage, sleep } from "./backoff.js"
@@ -66,6 +67,11 @@ export interface ProcessorOptions {
      * they hold one connection between them. Default: a holder, and so a connection, of its own.
      */
     lockHolder?: LockHolder
+    /**
+     * Turns at handling an event, shared by a consumer's processors (phase 21): an event's transaction, or a checkpoint
+     * move, waits for one. Default: no cap.
+     */
+    handlingSlots?: Semaphore
 }
 
 export interface RunningProcessor {
@@ -226,7 +232,12 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         // 5. Process events
         let processedCount = 0
 
-        const processEvent = async (event: SequencedEvent): Promise<void> => {
+        // A consumer's processors take turns at handling (phase 21), so their transactions don't each hold a
+        // connection at once. A blocked processor's wait for its retry holds no turn: its transaction rolled back.
+        const inTurn = <T>(work: () => Promise<T>): Promise<T> =>
+            opts.handlingSlots ? opts.handlingSlots.run(work) : work()
+
+        const processEventNow = async (event: SequencedEvent): Promise<void> => {
             const client = await pool.connect()
             try {
                 await client.query("BEGIN")
@@ -266,7 +277,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         }
 
         // Move the checkpoint without handling anything: past events the query didn't match, or a skipped one.
-        const advanceTo = async (seen: SequencePosition): Promise<void> => {
+        const advanceToNow = async (seen: SequencePosition): Promise<void> => {
             const storeResult = await storeCheckpoint(pool, processorName, tableName, seen, currentVersion, instanceId)
             if (storeResult === "VERSION_MISMATCH") {
                 throw new Error(`Checkpoint version mismatch for "${processorName}" — lock may have been stolen`)
@@ -275,6 +286,9 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             status.position = position
             currentVersion++
         }
+
+        const processEvent = (event: SequencedEvent) => inTurn(() => processEventNow(event))
+        const advanceTo = (seen: SequencePosition) => inTurn(() => advanceToNow(seen))
 
         // Handle one event under `onError`. False when the processor was stopped while blocked on it.
         const handle = async (event: SequencedEvent): Promise<boolean> => {

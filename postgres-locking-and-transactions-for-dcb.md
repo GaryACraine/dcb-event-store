@@ -576,6 +576,30 @@ on the bookmark channel → `COMMIT`. This preserves the atomicity guarantee:
 projection writes and bookmark advance are atomic. If either fails, neither
 commits and the event is redelivered on restart.
 
+**Concurrency governors (phase 21).** Holding two connections isn't the same as
+borrowing few. An append wakes every subscription at once; each borrowed a
+connection to read, then one to handle the event (and an automation's work
+borrows more inside that). So the pool's high-water mark still grew with the
+number of processors, though only a few reads and writes are ever really needed
+at once: 30 processors handling a burst borrowed 42 connections at once. Marten's
+async daemon met the same thing and caps it (`MaxConcurrentEventLoadsPerDatabase`
+and `MaxConcurrentBatchWritesPerDatabase`, 4 each). So does this library:
+- `PostgresEventStoreOptions.maxConcurrentSubscriptionReads` (default 4): a
+  store's subscriptions take turns at reading (the barrier and each page).
+  `read()` isn't capped.
+- `ConsumerOptions.maxConcurrentHandling` (default 4): a consumer's processors
+  take turns at handling (an event's transaction, or a checkpoint move). A
+  blocked processor's wait for its retry holds no turn.
+
+With both, the same burst borrowed 14 at once (2 held, 4 reads, 4 handling, 4
+nested), whatever the number of processors. A pool of 2 + the two caps + 1
+can't deadlock, since nested work borrows from the pool, not a turn. The cost:
+a slow handler holds its turn, so slow outside work belongs outside the
+transaction (the kit runs it on Temporal). Emmett instead reads once per
+consumer and hands every batch to all its processors (Axon reads once per
+processor, as here, with thread pools per processor); that lockstep would undo
+phase 19's rule that a blocked processor holds up only itself.
+
 **Start positions.** `startFrom: "BEGINNING"` uses the stored checkpoint
 (position 0 for new handlers, or the stored position for restarted ones).
 `startFrom: "CURRENT"` snapshots the high-water mark if the handler has never

@@ -1274,6 +1274,63 @@ quick pg bench on main and on the branch, and record the delta.
 
 ---
 
+## 11i. Phase 21 — Concurrency governors
+
+**Why.** Phase 20 brought what a consumer *holds* down to two connections, but not what it *borrows*. Every append
+wakes every subscription at once: each borrows a connection to read, then one to handle the event (an automation's
+work borrows more inside that). In licensing the database still saw 13 connections for 11 processors, and the kit's
+pool still had to be 2 + one per processor + headroom. Kit ADR-047, kit issue #170.
+
+**Research (for ADR-047; Gary asked how Emmett, Marten and Axon deal with it).**
+- **Emmett** (`emmett/src/consumers/consumers.ts`, `pollingMessageSource.ts`):
+  - one polling reader per consumer, from the earliest processor's position, in batches;
+  - each batch is passed to every active processor at once, and each skips what's before its checkpoint;
+  - a processor's failure fails the batch.
+
+  Why it was chosen (our reading): one read instead of N, a store-agnostic source with no `LISTEN`, and batches per
+  transaction. Its cost here: lockstep would undo phase 19's rule that a blocked processor holds up only itself.
+- **Marten's async daemon:** a read per projection, as here. It caps the daemon at
+  `MaxConcurrentEventLoadsPerDatabase` (4) and `MaxConcurrentBatchWritesPerDatabase` (4), added because an unbounded
+  daemon "can drive the connection pool's high-water mark toward the total agent count even though only a handful of
+  loads or writes are ever active at the same instant". That's this finding, exactly.
+- **Axon:** a coordinator per processor reads one stream and hands it to the processor's segments, with thread pools
+  per processor (they cap a processor, not the app). Ownership is token claims (a lease, `claimTimeout` 10 s), and it
+  handles a batch per transaction. Its segments and leases are the roadmap for scaling out (kit ADR-047), not this
+  fix.
+
+**Changes.**
+- `Semaphore` (`eventStore/semaphore.ts`, exported): at most `limit` at a time, first come first served, and
+  `Infinity` never waits.
+- `PostgresEventStoreOptions.maxConcurrentSubscriptionReads` (default 4): `subscribe`'s barrier snapshot and each page
+  read take a turn. `read()` isn't capped.
+- `ConsumerOptions.maxConcurrentHandling` (default 4): `createConsumer` shares one semaphore among its processors
+  (`ProcessorOptions.handlingSlots`). `runProcessor` takes a turn for each event's transaction and each checkpoint
+  move.
+  - A blocked processor's retry wait holds no turn: its transaction rolled back.
+  - Nested work in a handler borrows from the pool, not a turn, so a pool of 2 + the caps + 1 can't deadlock.
+
+**Measured** (`governors.tests.ts`):
+- 30 processors handling a burst of 5 events, each handler borrowing a second connection: **42** connections at once
+  uncapped, **14** capped (2 held, 4 reads, 4 handling, 4 nested), and never more than 4 handlers at once;
+- 50 subscriptions on a store capped at 2: at most 4 (the listener, 2 reads, the append).
+
+**Tests.** 5 new: the capped and uncapped bursts, no deadlock on a pool of 11 with 30 processors, a blocked processor
+holding no turn (handling cap 1, the others finish), and the store's read cap. All 395 earlier tests pass unchanged.
+
+**Trade-off (in the docs).** A slow handler holds its turn, so several slow handlers make the others wait. Slow outside
+work belongs outside the transaction (the kit runs it on Temporal, ADR-033).
+
+**Not changed:** the `EventStore` interface, append, read, locks.
+
+**Later options:**
+- targeted wake-ups (the NOTIFY payload carries the event types);
+- Axon's batch per transaction;
+- Emmett's one reader per consumer, if the N reads ever become the bottleneck.
+
+**Grade:** Easy–Medium. **Touches locks:** no.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1302,7 +1359,8 @@ quick pg bench on main and on the branch, and record the delta.
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
-| 20 | `phase-20/shared-connections-build` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
+| 20 | `phase-20/shared-connections-build` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
+| 21 | `phase-21/concurrency-governors` | in review | BENCH |
 
 ## 13. Known issues
 

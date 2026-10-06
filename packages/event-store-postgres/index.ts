@@ -3,6 +3,7 @@ export type { PostgresEventStoreOptions } from "./src/eventStore/PostgresEventSt
 export type { LockStrategy } from "./src/eventStore/lockStrategy.js"
 export { advisoryLocks, rowLocks } from "./src/eventStore/lockStrategy.js"
 export { NotificationListener } from "./src/eventStore/notificationListener.js"
+export { Semaphore } from "./src/eventStore/semaphore.js"
 export type { NotificationHandler, NotificationListenerOptions } from "./src/eventStore/notificationListener.js"
 export { runHandler } from "./src/eventHandling/runHandler.js"
 export type { HandlerRunnerOptions, RunningHandler } from "./src/eventHandling/runHandler.js"

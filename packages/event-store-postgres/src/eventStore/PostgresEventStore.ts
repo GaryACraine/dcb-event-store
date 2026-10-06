@@ -25,6 +25,7 @@ import { getHighWaterMark, getLastPosition, checkConditions } from "./queries.js
 import { analyseCommands } from "./analyseCommands.js"
 import { HwmCache } from "./hwmCache.js"
 import { NotificationListener } from "./notificationListener.js"
+import { Semaphore } from "./semaphore.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
@@ -33,6 +34,7 @@ const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
 const DEFAULT_HWM_CACHE_TTL_MS = 50
 const DEFAULT_SUBSCRIBE_BATCH_SIZE = 100
+const DEFAULT_MAX_CONCURRENT_SUBSCRIPTION_READS = 4
 
 export interface PostgresEventStoreOptions {
     pool: Pool
@@ -70,6 +72,14 @@ export interface PostgresEventStoreOptions {
      * it with `waitUntilProcessed` (its `listener` option) or with another store on the same database.
      */
     notificationListener?: NotificationListener
+    /**
+     * How many of this store's subscriptions may read at once (phase 21). An append wakes every subscription, and each
+     * reads on a connection of its own: uncapped, the pool's high-water mark grows with the number of processors
+     * though only a few reads are ever really needed at once. Marten caps its daemon the same way
+     * (`MaxConcurrentEventLoadsPerDatabase`, default 4). A read takes milliseconds and gives its connection back
+     * before yielding, so a wait for a turn is short. `read()` isn't capped. Default 4; `Infinity` for none.
+     */
+    maxConcurrentSubscriptionReads?: number
 }
 
 export class PostgresEventStore implements EventStore {
@@ -88,6 +98,7 @@ export class PostgresEventStore implements EventStore {
     private hwmCache: HwmCache
     private inlineProjections: Projection[]
     private onBeforeCommit?: (events: SequencedEvent[], context: { client: PoolClient }) => Promise<void>
+    private subscriptionReads: Semaphore
 
     constructor(options: PostgresEventStoreOptions) {
         this.pool = options.pool
@@ -97,6 +108,9 @@ export class PostgresEventStore implements EventStore {
         this.inlineProjections = options.inlineProjections ?? []
         this.onBeforeCommit = options.onBeforeCommit
         this.notificationListener = options.notificationListener ?? new NotificationListener(options.pool)
+        this.subscriptionReads = new Semaphore(
+            options.maxConcurrentSubscriptionReads ?? DEFAULT_MAX_CONCURRENT_SUBSCRIPTION_READS
+        )
         this.tableName = options.tablePrefix ? `${options.tablePrefix}_events` : "events"
         if (!VALID_IDENTIFIER.test(this.tableName))
             throw new Error(`Invalid table name "${this.tableName}": must match ${VALID_IDENTIFIER}`)
@@ -223,14 +237,17 @@ export class PostgresEventStore implements EventStore {
             while (!signal?.aborted) {
                 // A NOTIFY arriving from here on wakes the next wait at once, even while the read is running.
                 notified = false
-                const upperBound = await this.freshBarrierSnapshot(query)
+                // Each read waits its turn (phase 21): an append wakes every subscription at once
+                const upperBound = await this.subscriptionReads.run(() => this.freshBarrierSnapshot(query))
 
                 // A page at a time, its connection back in the pool before any of its events is yielded: the caller
                 // handles an event with no connection or open transaction held for it, so processors handling events
                 // at once can't take the pool between them (phase 20).
                 let hadEvents = false
                 for (;;) {
-                    const page = await this.readPage(query, position, upperBound, batchSize)
+                    const page = await this.subscriptionReads.run(() =>
+                        this.readPage(query, position, upperBound, batchSize)
+                    )
                     for (const event of page) {
                         yield event
                         position = event.position

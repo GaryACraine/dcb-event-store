@@ -316,7 +316,10 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
    a connection or a transaction while a handler runs: `subscribe` reads a
    page and gives the connection back before yielding it. Running behind a
    transaction-mode pooler needs lease rows and polling instead (the
-   eventmodelers kit's ADR-047, step 2).
+   eventmodelers kit's ADR-047, step 2). Subscriptions' reads and a
+   consumer's handling are capped (phase 21, 4 each by default), so the
+   connections borrowed at once don't grow with the processors: a pool of
+   2 + the caps + 1 can't deadlock.
 
 ## Keeping step with Emmett
 
