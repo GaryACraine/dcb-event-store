@@ -1251,6 +1251,27 @@ the number of processors.
 **Grade:** Medium. **Touches locks:** yes, but ownership locks only (not the append path's boundary locks). Run the
 quick pg bench on main and on the branch, and record the delta.
 
+**Built (2026-10-06), and what building it found.**
+- **Today's lost lock, proven on main first:** `pg_terminate_backend` on a processor's lock connection raised an
+  uncaught exception ("terminating connection due to administrator command"), which ends a real app, and the
+  processor ran on unowned, handling the next event.
+- **`subscribe` held a connection and an open transaction while each event was handled.** Its cursor read yielded
+  events from inside the read. So a processor handling an event needed two connections, and six processors catching
+  up at once on a pool of 6 deadlocked: each held a read, and each waited for a connection to handle its event. A
+  slow handler (an automation calling another system) also kept a transaction open for as long as it ran. **Fix:**
+  `subscribe` reads a page (`SubscribeOptions.batchSize`, 100 by default; a processor passes its `batchSize`) and
+  gives the connection back before yielding it. The processor's catch-up loop (`stopWhenCaughtUp`) pages the same
+  way. Without this, sharing the listener and the locks wouldn't have kept a small pool safe.
+- **The listener** wakes its handlers with `undefined` on loss and on reconnect, since notifications may have been
+  missed, so neither a subscription nor a wait depends on a notification arriving.
+- **Advisory locks are re-entrant within a session,** so the lock holder refuses a name it already holds.
+- **Examples:** `course-manager-web-api-sliced` and `course-manager-with-versioning` pass the store's listener to
+  `waitUntilProcessed`, as the kit's composition root will. That is the example: the phase changes no example's
+  behaviour.
+- **Tests:** 10 new (`notificationListener`, `lockHolder`, `sharedConnections`). Each waits on state with a deadline
+  (`test/waitFor.ts`), and a `handled` table with a unique key fails any event handled twice. All 385 existing tests
+  pass unchanged.
+
 ---
 
 ## 12. Status
@@ -1281,7 +1302,7 @@ quick pg bench on main and on the branch, and record the delta.
 | 17 | `phase-17/pongo-migration-research` | complete | N/A (documentation only) |
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
-| 20 | `phase-20/shared-connections` | planned (kit ADR-047, issue #170) | to run: ownership locks change, the append path doesn't |
+| 20 | `phase-20/shared-connections-build` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
 
 ## 13. Known issues
 
