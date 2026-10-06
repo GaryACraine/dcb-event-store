@@ -64,6 +64,12 @@ export interface SubscribeOptions {
     pollIntervalMs?: number
     signal?: AbortSignal
     /**
+     * How many events a store reads at a time. A store that reads through a database connection gives it back before
+     * yielding a page's events, so no connection or transaction is held while the caller handles one. Default: the
+     * store's own (the Postgres store's is 100).
+     */
+    batchSize?: number
+    /**
      * Called when the subscription has seen every event matching its query up to `position`, and `position` lies
      * past the last event it yielded (the events after it didn't match). The subscription continues from there.
      * A processor stores it as its checkpoint, so a checkpoint means "has seen everything up to X", not "the last

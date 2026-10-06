@@ -229,6 +229,7 @@ async function waitUntilProcessed(
     options?: {
         timeoutMs?: number            // defaults to 5000
         bookmarkTableName?: string    // defaults to "_handler_bookmarks"
+        listener?: NotificationListener // the store's (`store.notificationListener`), to share its connection
     }
 ): Promise<void>
 ```
@@ -257,17 +258,20 @@ Three quick polls at 5ms, 15ms, and 30ms. Each check is a simple `SELECT last_se
 
 If the fast phase did not succeed:
 
-1. Acquire a dedicated connection from the pool
-2. `LISTEN <bookmarkTableName>` -- establish before the next check to prevent TOCTOU race
+1. Register on the bookmark table's channel through a `NotificationListener`: the store's own when passed as
+   `listener` (`store.notificationListener`), so every slow wait shares the store's one `LISTEN` connection
+   (phase 20); without one, the wait opens a listener, and so a connection, of its own
+2. `LISTEN <bookmarkTableName>` -- established before `listen` resolves, so before the next check, to prevent TOCTOU race
 3. Loop until deadline:
    a. Check the bookmark (after LISTEN is established -- no missed notifications)
    b. If reached, return
-   c. Wait for either a notification **for this handler** or a 100ms timeout (other handlers' notifications on the shared channel are ignored)
+   c. Wait for either a notification **for this handler** or a 100ms timeout (other handlers' notifications on the shared channel are ignored). If the listener's connection is lost or comes back, it wakes the wait too, since notifications may have been missed
    d. On notification, re-check immediately
 
    One notification listener serves the whole wait and is removed at the end. (Before phase 18 each 100ms wait added one that outlived it: a `MaxListenersExceededWarning` after about a second.)
 4. If deadline exceeded, throw `WaitTimeoutError`
-5. `UNLISTEN` and release the connection
+5. Stop listening: the listener `UNLISTEN`s once its last handler on the channel goes, and gives its connection back
+   to the pool once its last handler of all goes
 
 The LISTEN-before-check ordering prevents the race where a notification fires between the check and the LISTEN setup.
 

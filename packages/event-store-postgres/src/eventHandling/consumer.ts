@@ -11,6 +11,7 @@ import {
 import { StartPosition } from "./startPositions.js"
 import { Backoff, backoffDelay, errorMessage, sleep } from "./backoff.js"
 import { ProcessorStatus, RestartStatus } from "./processorStatus.js"
+import { LockHolder } from "./lockHolder.js"
 import { v4 as uuid } from "uuid"
 
 /** A consumer's processors retry or skip; a stop would only end the run the consumer then starts again. */
@@ -59,6 +60,10 @@ export interface RunningConsumer {
  * (its lock held by another instance, a lost lock or connection), the consumer
  * logs it and starts it again after a backoff, until it's stopped. A
  * processor's promise only settles when it's stopped or done.
+ *
+ * Its processors hold their locks on one connection between them (phase 20):
+ * when that connection is lost, they all stop at once and start again on a
+ * new one.
  */
 export function createConsumer(options: ConsumerOptions): RunningConsumer {
     if (options.processors.length === 0) {
@@ -77,8 +82,9 @@ export function createConsumer(options: ConsumerOptions): RunningConsumer {
         }
     }
 
+    const lockHolder = new LockHolder(options.pool)
     const processors: RunningProcessor[] = options.processors.map(config =>
-        superviseProcessor(options, config, internalController.signal)
+        superviseProcessor(options, config, internalController.signal, lockHolder)
     )
 
     let stopped = false
@@ -96,7 +102,8 @@ export function createConsumer(options: ConsumerOptions): RunningConsumer {
 function superviseProcessor(
     options: ConsumerOptions,
     config: ConsumerProcessorConfig,
-    signal: AbortSignal
+    signal: AbortSignal,
+    lockHolder: LockHolder
 ): RunningProcessor {
     const instanceId = uuid()
     const logger = options.logger ?? console
@@ -120,7 +127,8 @@ function superviseProcessor(
             backoff: config.backoff,
             logger,
             signal,
-            instanceId
+            instanceId,
+            lockHolder
         })
 
     const promise = (async () => {

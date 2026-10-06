@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from "pg"
 import { EventHandler, EventStore, Query, SequencedEvent, SequencePosition, Tags } from "@dcb-es/event-store"
 import { acquireProcessorLock, ProcessorLockHandle } from "./processorLock.js"
+import { LockHolder } from "./lockHolder.js"
 import { readCheckpoint, storeCheckpoint, Checkpoint } from "./checkpointer.js"
 import { resolveStartPosition, StartPosition } from "./startPositions.js"
 import { Backoff, backoffDelay, errorMessage, sleep } from "./backoff.js"
@@ -60,6 +61,11 @@ export interface ProcessorOptions {
     logger?: ProcessorLogger
     /** Tell the handler it's replaying for a rebuild (`HandlerContext.rebuilding`). */
     rebuilding?: boolean
+    /**
+     * The session that holds the processor's lock (phase 20). `createConsumer` shares one among its processors, so
+     * they hold one connection between them. Default: a holder, and so a connection, of its own.
+     */
+    lockHolder?: LockHolder
 }
 
 export interface RunningProcessor {
@@ -97,7 +103,8 @@ export function assertProcessorName(processorName: string): void {
  * processor blocks on that event and says so in `status()` and its bookmark
  * row). The returned promise resolves when the signal is aborted or stopAfter
  * is reached, and rejects on an unrecoverable error (lock not acquired, lock
- * stolen, or a handler error with `onError: "stop"`).
+ * lost with its connection, lock stolen, or a handler error with
+ * `onError: "stop"`).
  */
 export function createProcessor(options: ProcessorOptions): RunningProcessor {
     const { processorName } = options
@@ -143,7 +150,7 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         pollIntervalMs,
         startFrom,
         stopAfter,
-        signal,
+        signal: stopSignal,
         instanceId,
         onError,
         logger,
@@ -156,10 +163,19 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
     }
 
     // 1. Acquire session-scoped processor lock
-    const lock: ProcessorLockHandle = await acquireProcessorLock(pool, processorName)
+    const lock: ProcessorLockHandle = await acquireProcessorLock(pool, processorName, opts.lockHolder)
     if (!lock.acquired) {
         throw new Error(`Processor lock not acquired for "${processorName}" — another instance is running`)
     }
+
+    // The run stops when it's stopped, or when its lock is lost with the connection that held it (phase 20): it
+    // must not handle events it no longer owns.
+    const runController = new AbortController()
+    const stopRun = () => runController.abort()
+    stopSignal?.addEventListener("abort", stopRun, { once: true })
+    lock.lost.addEventListener("abort", stopRun, { once: true })
+    if (stopSignal?.aborted || lock.lost.aborted) runController.abort()
+    const signal = runController.signal
 
     try {
         // 2. Read checkpoint
@@ -305,16 +321,20 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
         }
 
         if (opts.stopWhenCaughtUp) {
-            // Read-loop mode: process all available events then exit
-            while (!signal?.aborted) {
-                let hadEvents = false
-                for await (const event of eventStore.read(query, { after: position })) {
-                    if (signal?.aborted) break
-                    if (!(await handle(event))) break
-                    hadEvents = true
-                    if (stopAfter !== undefined && processedCount >= stopAfter) break
+            // Read-loop mode: process all available events then exit. A page at a time, read in full before any of it
+            // is handled, so no read holds a connection while a handler runs (phase 20).
+            const batchSize = opts.batchSize ?? 100
+            while (!signal.aborted) {
+                const page: SequencedEvent[] = []
+                for await (const event of eventStore.read(query, { after: position, limit: batchSize }))
+                    page.push(event)
+                let stop = false
+                for (const event of page) {
+                    if (signal.aborted || !(await handle(event))) stop = true
+                    else if (stopAfter !== undefined && processedCount >= stopAfter) stop = true
+                    if (stop) break
                 }
-                if (!hadEvents || (stopAfter !== undefined && processedCount >= stopAfter)) break
+                if (stop || page.length === 0) break
             }
         } else {
             // The checkpoint means "has seen everything up to X", as Emmett's does: when the events after the last
@@ -322,10 +342,11 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
             // processor has no events at would time out (PLAN phase 18).
             const onCaughtUp = advanceTo
 
-            // Subscribe mode: persistent cursor + LISTEN wakeup
+            // Subscribe mode: pages of events, and the store's shared LISTEN to wake it
             for await (const event of eventStore.subscribe(query, {
                 after: position,
                 pollIntervalMs,
+                batchSize: opts.batchSize,
                 signal,
                 onCaughtUp
             })) {
@@ -334,7 +355,14 @@ async function runProcessor(opts: InternalProcessorOptions): Promise<void> {
                 if (stopAfter !== undefined && processedCount >= stopAfter) break
             }
         }
+
+        // Stopped by a lost lock, not by its owner: end with an error, so a consumer starts it again.
+        if (lock.lost.aborted && !stopSignal?.aborted) {
+            throw new Error(`Processor "${processorName}" lost its lock: ${errorMessage(lock.lost.reason)}`)
+        }
     } finally {
+        stopSignal?.removeEventListener("abort", stopRun)
+        lock.lost.removeEventListener("abort", stopRun)
         await lock.release()
     }
 }
