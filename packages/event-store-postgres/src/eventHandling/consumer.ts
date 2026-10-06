@@ -12,6 +12,7 @@ import { StartPosition } from "./startPositions.js"
 import { Backoff, backoffDelay, errorMessage, sleep } from "./backoff.js"
 import { ProcessorStatus, RestartStatus } from "./processorStatus.js"
 import { LockHolder } from "./lockHolder.js"
+import { Semaphore } from "../eventStore/semaphore.js"
 import { v4 as uuid } from "uuid"
 
 /** A consumer's processors retry or skip; a stop would only end the run the consumer then starts again. */
@@ -43,6 +44,14 @@ export interface ConsumerOptions {
     signal?: AbortSignal
     /** Where retries, skips and restarts are reported. Default `console`. */
     logger?: ProcessorLogger
+    /**
+     * How many of its processors may handle an event at once (phase 21). Each handles an event in a transaction on a
+     * connection of its own, and an automation's work borrows more inside it: uncapped, the pool's high-water mark
+     * grows with the number of processors. Marten caps its daemon the same way
+     * (`MaxConcurrentBatchWritesPerDatabase`, default 4). A slow handler holds its turn, so several slow handlers make
+     * the others wait: keep slow outside work out of the transaction. Default 4; `Infinity` for none.
+     */
+    maxConcurrentHandling?: number
 }
 
 export interface RunningConsumer {
@@ -83,8 +92,9 @@ export function createConsumer(options: ConsumerOptions): RunningConsumer {
     }
 
     const lockHolder = new LockHolder(options.pool)
+    const handlingSlots = new Semaphore(options.maxConcurrentHandling ?? 4)
     const processors: RunningProcessor[] = options.processors.map(config =>
-        superviseProcessor(options, config, internalController.signal, lockHolder)
+        superviseProcessor(options, config, internalController.signal, lockHolder, handlingSlots)
     )
 
     let stopped = false
@@ -103,7 +113,8 @@ function superviseProcessor(
     options: ConsumerOptions,
     config: ConsumerProcessorConfig,
     signal: AbortSignal,
-    lockHolder: LockHolder
+    lockHolder: LockHolder,
+    handlingSlots: Semaphore
 ): RunningProcessor {
     const instanceId = uuid()
     const logger = options.logger ?? console
@@ -128,7 +139,8 @@ function superviseProcessor(
             logger,
             signal,
             instanceId,
-            lockHolder
+            lockHolder,
+            handlingSlots
         })
 
     const promise = (async () => {

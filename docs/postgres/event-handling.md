@@ -203,6 +203,13 @@ Axon 5's default and Emmett's `skip`). The handler's transaction is always rolle
 
 ---
 
+### Concurrency (phase 21)
+
+A consumer's processors take turns at handling, `maxConcurrentHandling` at a time (default 4), and a store's
+subscriptions take turns at reading, `maxConcurrentSubscriptionReads` at a time (default 4). So the connections they
+borrow at once stay at about 2 + 4 + 4 (plus what handlers borrow inside their transactions), whatever the number of
+processors. A slow handler holds its turn: keep slow outside work out of the transaction. `Infinity` turns a cap off.
+
 ## waitUntilProcessed()
 
 Wait until a handler's bookmark has reached (or passed) a given position. Used after appending events to ensure a projection is up to date before reading.
