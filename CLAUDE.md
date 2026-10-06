@@ -310,7 +310,13 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
    `contention` with and without the feature enabled and record the delta.
 7. **Poolers.** Advisory locks require session-mode connections. Do not add
    code paths that assume a transaction-mode pooler (PgBouncer, Supavisor,
-   RDS Proxy) unless using `rowLocks()`.
+   RDS Proxy) unless using `rowLocks()`. A consumer holds two session
+   connections whatever its number of processors (phase 20): the store's
+   shared `LISTEN` (`NotificationListener`) and its `LockHolder`. Never hold
+   a connection or a transaction while a handler runs: `subscribe` reads a
+   page and gives the connection back before yielding it. Running behind a
+   transaction-mode pooler needs lease rows and polling instead (the
+   eventmodelers kit's ADR-047, step 2).
 
 ## Keeping step with Emmett
 

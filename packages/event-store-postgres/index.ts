@@ -2,6 +2,8 @@ export { PostgresEventStore } from "./src/eventStore/PostgresEventStore.js"
 export type { PostgresEventStoreOptions } from "./src/eventStore/PostgresEventStore.js"
 export type { LockStrategy } from "./src/eventStore/lockStrategy.js"
 export { advisoryLocks, rowLocks } from "./src/eventStore/lockStrategy.js"
+export { NotificationListener } from "./src/eventStore/notificationListener.js"
+export type { NotificationHandler, NotificationListenerOptions } from "./src/eventStore/notificationListener.js"
 export { runHandler } from "./src/eventHandling/runHandler.js"
 export type { HandlerRunnerOptions, RunningHandler } from "./src/eventHandling/runHandler.js"
 export { createProcessor } from "./src/eventHandling/processor.js"
@@ -14,6 +16,8 @@ export type {
     HandlerContext,
     HandlerFactory
 } from "./src/eventHandling/processor.js"
+export { LockHolder } from "./src/eventHandling/lockHolder.js"
+export type { HeldLock } from "./src/eventHandling/lockHolder.js"
 export { createConsumer } from "./src/eventHandling/consumer.js"
 export type {
     ConsumerOptions,

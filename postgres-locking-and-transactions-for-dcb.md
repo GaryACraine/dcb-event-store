@@ -519,7 +519,7 @@ twice. Idempotent projections mask it; non-idempotent side effects (emails,
 external API calls) do not.
 
 **Session-scoped processor lock.** Each processor acquires
-`pg_try_advisory_lock(processorLockKey(name))` on a dedicated client before
+`pg_try_advisory_lock(processorLockKey(name))` through a `LockHolder` before
 processing begins. If another instance already holds the lock, the call
 returns `false` and the processor rejects immediately. The lock is session-
 scoped (not `_xact_`) because it must survive across the many short
@@ -528,6 +528,21 @@ own `BEGIN`/`COMMIT`, and the lock must not be released between them. Contrast
 with the schema-migration lock in §8.9 which also spans multiple statements,
 and with the boundary locks in §8.3 which are transaction-scoped because they
 protect a single append.
+
+**One lock connection per consumer (phase 20).** A session-scoped lock pins its
+connection: it can't go back to the pool. With one connection per processor, an
+app's connections grew with its processors, so `createConsumer` shares one
+`LockHolder` among its processors, and they hold all their locks on one session.
+- **Re-entrancy.** Advisory locks are re-entrant within a session, so the holder
+  refuses a second acquire of a name it already holds itself: one session can't
+  tell two owners apart.
+- **A lost connection.** When the holder's connection errors or ends, every lock
+  on it is gone at once. Each processor's `lost` signal aborts and its run ends
+  with "lost its lock", rather than handling events it no longer owns. The
+  consumer (phase 19) starts each again after its backoff, on a new connection.
+  Before phase 20, nothing listened for the lock client's `error`: a terminated
+  lock connection was an uncaught exception, and the processor ran on unowned.
+- A processor started on its own gets a holder, and so a connection, of its own.
 
 **The `P:` namespace.** The processor lock key is hashed with the `P:` prefix,
 the fourth namespace alongside `L:` (leaf), `T:` (type intent), and `G`
@@ -546,8 +561,16 @@ silently double-processing. The bookmark table carries three Phase 3 columns:
 processor instance last wrote), and `last_updated TIMESTAMPTZ`.
 
 **Subscribe-based processing.** The processor uses `eventStore.subscribe()`
-internally, which handles the LISTEN/read/poll loop efficiently via a
-persistent cursor. Each event yielded by `subscribe()` is processed in its own
+internally, which handles the LISTEN/read/poll loop. Since phase 20 it reads a
+page of events (`batchSize`, 100 by default) and gives the connection back
+before yielding any of them: before, the read's cursor held a connection and an
+open transaction while the handler ran, so processors handling events at once
+needed two connections each, and could take the pool between them (each holding
+a read, each waiting for a connection to handle its event). Its wake-up is the
+store's one shared `LISTEN` connection (`NotificationListener`); if that is lost,
+subscriptions poll at their interval while it reconnects. So a consumer holds
+**two connections in all**, the listener and its lock holder, whatever the number
+of its processors. Each event yielded by `subscribe()` is processed in its own
 transaction: `BEGIN` → handler writes → CAS checkpoint update → `pg_notify`
 on the bookmark channel → `COMMIT`. This preserves the atomicity guarantee:
 projection writes and bookmark advance are atomic. If either fails, neither

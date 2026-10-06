@@ -24,6 +24,7 @@ import { copyEventsToTable } from "./copyWriter.js"
 import { getHighWaterMark, getLastPosition, checkConditions } from "./queries.js"
 import { analyseCommands } from "./analyseCommands.js"
 import { HwmCache } from "./hwmCache.js"
+import { NotificationListener } from "./notificationListener.js"
 
 const VALID_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/i
 const READ_BATCH_SIZE = 5000
@@ -31,6 +32,7 @@ const COPY_THRESHOLD = 10_000
 const TAG_DELIMITER = "\x1F"
 const CONDITION_VIOLATED_SIGNAL = "APPEND_CONDITION_VIOLATED"
 const DEFAULT_HWM_CACHE_TTL_MS = 50
+const DEFAULT_SUBSCRIBE_BATCH_SIZE = 100
 
 export interface PostgresEventStoreOptions {
     pool: Pool
@@ -63,9 +65,19 @@ export interface PostgresEventStoreOptions {
      * A throw rolls back both the events and any projection writes.
      */
     onBeforeCommit?: (events: SequencedEvent[], context: { client: PoolClient }) => Promise<void>
+    /**
+     * The `LISTEN` connection this store's subscriptions share (phase 20). Default: one of its own. Pass one to share
+     * it with `waitUntilProcessed` (its `listener` option) or with another store on the same database.
+     */
+    notificationListener?: NotificationListener
 }
 
 export class PostgresEventStore implements EventStore {
+    /**
+     * The one `LISTEN` connection this store's subscriptions share (phase 20). Pass it to `waitUntilProcessed` so a
+     * slow wait doesn't open one of its own.
+     */
+    readonly notificationListener: NotificationListener
     private tableName: string
     private appendFunctionName: string
     private barrierFunctionName: string
@@ -84,6 +96,7 @@ export class PostgresEventStore implements EventStore {
         this.hwmCache = new HwmCache(options.hwmCacheTtlMs ?? DEFAULT_HWM_CACHE_TTL_MS, options.hwmCacheMaxEntries)
         this.inlineProjections = options.inlineProjections ?? []
         this.onBeforeCommit = options.onBeforeCommit
+        this.notificationListener = options.notificationListener ?? new NotificationListener(options.pool)
         this.tableName = options.tablePrefix ? `${options.tablePrefix}_events` : "events"
         if (!VALID_IDENTIFIER.test(this.tableName))
             throw new Error(`Invalid table name "${this.tableName}": must match ${VALID_IDENTIFIER}`)
@@ -184,49 +197,49 @@ export class PostgresEventStore implements EventStore {
 
     async *subscribe(query: Query, options?: SubscribeOptions): AsyncGenerator<SequencedEvent> {
         const pollInterval = options?.pollIntervalMs ?? 100
+        const batchSize = options?.batchSize ?? DEFAULT_SUBSCRIBE_BATCH_SIZE
         let position = options?.after ?? SequencePosition.initial()
         const signal = options?.signal
 
-        // One listener of each kind for the subscription's life, removed when it ends. An idle wait only arms a
-        // timer: a listener registered per wait outlives it when the timer wins, and piles up (Emmett PR #405).
-        let listenerError: Error | null = null
+        // One registration for the subscription's life, removed when it ends. An idle wait only arms a timer: a
+        // listener registered per wait outlives it when the timer wins, and piles up (Emmett PR #405).
         let notified = false
         let wake: (() => void) | null = null
         const onNotification = () => {
+            // A NOTIFY means a writer (here or on another instance) committed; `undefined` means notifications may
+            // have been missed. Either way, invalidate so the next iteration's barrier picks up the new state.
             notified = true
-            // A NOTIFY means a writer (here or on another instance) committed.
-            // Invalidate so the next iteration's barrier picks up the new state.
             this.hwmCache.invalidateAll()
-            wake?.()
-        }
-        const onError = (err: Error) => {
-            listenerError = err
             wake?.()
         }
         const onAbort = () => wake?.()
 
-        const listener = await this.pool.connect()
-        listener.on("notification", onNotification)
-        listener.on("error", onError)
+        // The store's one LISTEN connection, shared by every subscription (phase 20). If it's lost, the subscription
+        // carries on at its poll interval while it reconnects.
+        const stopListening = await this.notificationListener.listen(this.notifyChannel, onNotification)
         signal?.addEventListener("abort", onAbort)
 
         try {
-            await listener.query(`LISTEN ${this.notifyChannel}`)
-
             while (!signal?.aborted) {
                 // A NOTIFY arriving from here on wakes the next wait at once, even while the read is running.
                 notified = false
                 const upperBound = await this.freshBarrierSnapshot(query)
 
+                // A page at a time, its connection back in the pool before any of its events is yielded: the caller
+                // handles an event with no connection or open transaction held for it, so processors handling events
+                // at once can't take the pool between them (phase 20).
                 let hadEvents = false
-                for await (const event of this.readBounded(query, { after: position }, upperBound)) {
-                    yield event
-                    position = event.position
-                    hadEvents = true
+                for (;;) {
+                    const page = await this.readPage(query, position, upperBound, batchSize)
+                    for (const event of page) {
+                        yield event
+                        position = event.position
+                        hadEvents = true
+                    }
+                    if (page.length < batchSize || signal?.aborted) break
                 }
 
                 if (hadEvents) continue
-                if (listenerError) throw listenerError
 
                 // Every matching event up to the barrier's high-water mark has been yielded, so the subscription
                 // has seen everything up to it. Report it when it moves past the last event yielded.
@@ -249,12 +262,20 @@ export class PostgresEventStore implements EventStore {
             }
         } finally {
             signal?.removeEventListener("abort", onAbort)
-            await listener.query(`UNLISTEN ${this.notifyChannel}`).catch(() => {})
-            listener.removeListener("notification", onNotification)
-            listener.removeListener("error", onError)
-            // A connection that failed goes back broken, so the pool discards it.
-            listener.release(listenerError ?? undefined)
+            await stopListening()
         }
+    }
+
+    /** Up to `limit` events after `after`, up to the barrier; read in full, so the connection is back in the pool. */
+    private async readPage(
+        query: Query,
+        after: SequencePosition,
+        upperBound: bigint,
+        limit: number
+    ): Promise<SequencedEvent[]> {
+        const page: SequencedEvent[] = []
+        for await (const event of this.readBounded(query, { after, limit }, upperBound)) page.push(event)
+        return page
     }
 
     // ─── Append ─────────────────────────────────────────────────────

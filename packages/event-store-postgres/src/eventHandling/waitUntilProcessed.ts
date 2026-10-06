@@ -1,5 +1,6 @@
-import { Notification, Pool } from "pg"
+import { Pool } from "pg"
 import { SequencePosition, WaitTimeoutError } from "@dcb-es/event-store"
+import { NotificationListener } from "../eventStore/notificationListener.js"
 
 /**
  * Wait until a handler's bookmark has reached (or passed) the given position.
@@ -10,7 +11,9 @@ import { SequencePosition, WaitTimeoutError } from "@dcb-es/event-store"
  * Strategy: poll with short backoff first (avoids holding a LISTEN connection
  * for the common fast case), then fall back to LISTEN+poll for the slow case.
  * LISTEN is established before the first slow-path check to prevent the
- * TOCTOU race where a notification fires between check and LISTEN.
+ * TOCTOU race where a notification fires between check and LISTEN. Pass the
+ * store's `notificationListener` as `listener` so the slow path shares its one
+ * LISTEN connection (phase 20); without it, the wait opens one of its own.
  *
  * @throws WaitTimeoutError (a 504) when the bookmark doesn't get there within `timeoutMs`.
  */
@@ -18,7 +21,7 @@ export async function waitUntilProcessed(
     pool: Pool,
     handlerName: string,
     position: SequencePosition,
-    options?: { timeoutMs?: number; bookmarkTableName?: string }
+    options?: { timeoutMs?: number; bookmarkTableName?: string; listener?: NotificationListener }
 ): Promise<void> {
     const timeoutMs = options?.timeoutMs ?? 5000
     const tableName = options?.bookmarkTableName ?? "_handler_bookmarks"
@@ -34,23 +37,21 @@ export async function waitUntilProcessed(
     }
     if (await hasReachedPosition(pool, tableName, handlerName, position)) return
 
-    // Slow path. One notification listener for the whole wait, removed at the end: one registered per 100 ms wait
-    // outlives it when the timer wins, and piles up (Emmett PR #405's lesson). Only this handler's bookmark
-    // notifications wake it; every processor notifies on the same channel.
+    // Slow path. One registration for the whole wait, removed at the end: one registered per 100 ms wait outlives it
+    // when the timer wins, and piles up (Emmett PR #405's lesson). Only this handler's bookmark notifications wake it;
+    // every processor notifies on the same channel. `undefined` means notifications may have been missed: check again.
     let notified = false
     let wake: (() => void) | null = null
-    const onNotification = (msg: Notification) => {
-        if (!msg.payload?.startsWith(`${handlerName}:`)) return
+    const onNotification = (payload: string | undefined) => {
+        if (payload !== undefined && !payload.startsWith(`${handlerName}:`)) return
         notified = true
         wake?.()
     }
 
-    const client = await pool.connect()
-    client.on("notification", onNotification)
+    // LISTEN first, then check — prevents lost notifications
+    const listener = options?.listener ?? new NotificationListener(pool)
+    const stopListening = await listener.listen(tableName, onNotification)
     try {
-        // LISTEN first, then check — prevents lost notifications
-        await client.query(`LISTEN ${tableName}`)
-
         while (Date.now() < deadline) {
             notified = false
             if (await hasReachedPosition(pool, tableName, handlerName, position)) return
@@ -72,9 +73,7 @@ export async function waitUntilProcessed(
 
         throw new WaitTimeoutError(handlerName, position.toString(), timeoutMs)
     } finally {
-        client.removeListener("notification", onNotification)
-        await client.query(`UNLISTEN ${tableName}`).catch(() => {})
-        client.release()
+        await stopListening()
     }
 }
 

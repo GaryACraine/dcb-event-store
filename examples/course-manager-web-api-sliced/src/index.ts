@@ -73,12 +73,13 @@ const consumer = createConsumer({
     ]
 })
 
-// Per-projection waitFn instances
+// Per-projection waitFn instances. A slow wait shares the store's one LISTEN connection, rather than opening its own.
+const listener = eventStore.notificationListener
 const courseWaitFn = (position: SequencePosition, timeoutMs: number) =>
-    waitUntilProcessed(pool, COURSE_PROJECTION_NAME, position, { timeoutMs })
+    waitUntilProcessed(pool, COURSE_PROJECTION_NAME, position, { timeoutMs, listener })
 
 const studentWaitFn = (position: SequencePosition, timeoutMs: number) =>
-    waitUntilProcessed(pool, STUDENT_PROJECTION_NAME, position, { timeoutMs })
+    waitUntilProcessed(pool, STUDENT_PROJECTION_NAME, position, { timeoutMs, listener })
 
 const deps = { store: eventStore, pool }
 
