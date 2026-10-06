@@ -814,9 +814,12 @@ describe.each(strategies)("PostgresEventStore [%s]", (_name, createStrategy) => 
             const after = new Date()
             const [se] = await streamAllEventsToArray(store.read(Query.all()))
             expect(se.recordedAt).toBeInstanceOf(Date)
-            // Allow 5ms tolerance for clock skew between Node.js and Postgres server
-            expect(se.recordedAt.getTime()).toBeGreaterThanOrEqual(before.getTime() - 5)
-            expect(se.recordedAt.getTime()).toBeLessThanOrEqual(after.getTime() + 5)
+            // recordedAt is the database clock, before and after are Node's. A Postgres container's clock can drift tens
+            // of milliseconds from the host's (Docker's VM), so allow a second: the test is that it's the time of the append,
+            // not a precise one.
+            const clockSkewMs = 1000
+            expect(se.recordedAt.getTime()).toBeGreaterThanOrEqual(before.getTime() - clockSkewMs)
+            expect(se.recordedAt.getTime()).toBeLessThanOrEqual(after.getTime() + clockSkewMs)
         })
 
         test("schemaVersion defaults to '1' when not provided", async () => {
