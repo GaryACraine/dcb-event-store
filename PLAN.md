@@ -1331,6 +1331,34 @@ work belongs outside the transaction (the kit runs it on Temporal, ADR-033).
 
 ---
 
+## 11j. Phase 22 — A decider may decide nothing
+
+**Why.** `handle()` threw "Decider must return at least one event" (since phase 2), although phase 2's own
+`DeciderSpecification.thenNothingHappened()` tests a decider that returns `[]`. So an idempotent repeat had to be an
+invented event or a refusal. In licensing, Paddle's answer to our cancel, arriving after Paddle's event of the same
+cancel was recorded, would have been refused ("Already cancelled") and the workflow taught to treat that refusal as
+done (kit ADR-049). Gary: a decider returning an empty array is the natural no-op.
+
+**Reference.** Emmett's `handleCommand` (`commandHandling/handleCommand.ts`): when the decision appends no events it
+returns `newEvents: []` with the stream version unchanged, and appends nothing.
+
+**Changes.**
+- `handleCommand(store, decider, command, options)`, exported: returns `{ position, events }`. A decision of `[]`
+  appends nothing and returns the position the decision was read at (`appendCondition.after`: the last event it
+  read, or the initial position), with `events: []`.
+- `handle()` keeps its signature and returns `handleCommand(...).position`.
+- `Decider.decide`'s doc: `[]` decides nothing (the intent already holds); refuse only when the intent can't hold.
+
+**Tests.** 5 new (`Decider.tests.ts`, a stub store): an append, a decision of nothing (no append, no error, the read
+position), `handle`'s position for it with an idempotency key, the initial position with nothing read, and a
+refusal still refused. All earlier tests pass unchanged.
+
+**Not changed:** the `EventStore` interface, append, read, locks. **Bench:** N/A (no append/read/lock changes).
+
+**Grade:** Easy. **Touches locks:** no.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1361,6 +1389,7 @@ work belongs outside the transaction (the kit runs it on Temporal, ADR-033).
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
 | 20 | `phase-20/shared-connections-build` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
 | 21 | `phase-21/concurrency-governors` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 3986/7426 vs 4028/7407 events/s; raw-throughput 26110 vs 27174); the same three scenarios fail on both (known issue 13.2) |
+| 22 | `phase-22/decide-nothing` | in review | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 
