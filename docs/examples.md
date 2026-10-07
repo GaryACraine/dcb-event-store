@@ -236,9 +236,19 @@ const cmd: RegisterCourse = { type: "registerCourse", data: { id: "c1", title: "
 Each decider is a pure value object with two functions:
 
 - `handlers(cmd)` -- returns the `EventHandlerWithState` map parameterised by command fields (e.g., `CourseExists(cmd.data.id)`)
-- `decide(cmd, state)` -- validates business rules against the folded state and returns event(s) or throws a typed error
+- `decide(cmd, state)` -- validates business rules against the folded state and returns event(s), returns `[]` when the command's intent already holds (a repeat: nothing to record), or throws a typed error when it can't hold
 
-The `handle()` function orchestrates: build handlers, run `buildDecisionModel` to fold events into state, call `decide`, and append with the returned `appendCondition`.
+The `handle()` function orchestrates: build handlers, run `buildDecisionModel` to fold events into state, call `decide`, and append with the returned `appendCondition`. A decision of `[]` appends nothing and returns the position the decision was read at. `handleCommand()` does the same and returns `{ position, events }`, so an HTTP route can tell a change recorded (`events` not empty) from nothing new.
+
+```typescript
+// A repeat of the same request is a no-op, not an error
+decide: (cmd, state) => {
+    if (state.courseExists && state.capacity === cmd.data.capacity) return []
+    if (state.courseExists) throw new IllegalStateError("Course already exists with another capacity")
+    return new CourseWasRegisteredEvent({ courseId: cmd.data.id, title: cmd.data.title, capacity: cmd.data.capacity })
+}
+// Its test: .thenNothingHappened()
+```
 
 ### DeciderSpecification tests
 

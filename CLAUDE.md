@@ -77,7 +77,9 @@ reference. The roadmap is in `PLAN.md`; work one phase at a time.
 - **Decider** — formalises the command-handling pattern: `handlers(cmd)`
   returns the `EventHandlerWithState` map, `decide(cmd, state)` produces
   events or throws. The `decider()` factory infers handler types; `handle()`
-  orchestrates `buildDecisionModel` → `decide` → `append`.
+  orchestrates `buildDecisionModel` → `decide` → `append`. A decision of `[]`
+  (the intent already holds) appends nothing; `handleCommand` returns
+  `{ position, events }` so a caller can tell (phase 22).
 - **Typed domain errors** — `DcbError` base class (extends `Error`, adds
   `code` and `status`). Subclasses: `NotFoundError` (404),
   `ValidationError` (400), `IllegalStateError` (422).
