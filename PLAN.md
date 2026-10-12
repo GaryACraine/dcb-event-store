@@ -1388,8 +1388,9 @@ refusal still refused. All earlier tests pass unchanged.
 | 18 | `phase-18/read-side-hardening` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling rerun 4097/7425 vs 4062/7514 events/s); bulk-import, raw-throughput and parallel-import fail on main too (known issue 13.2, not this phase) |
 | 19 | `phase-19/processor-failure-policy` | in review | N/A (no append/read/lock changes) |
 | 20 | `phase-20/shared-connections-build` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 4073/7475 vs 4127/7691 events/s; raw-throughput rerun twice each, 25707/26316 vs 26455/26042); the same three scenarios fail on both (known issue 13.2) |
-| 21 | `phase-21/concurrency-governors` | in review | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 3986/7426 vs 4028/7407 events/s; raw-throughput 26110 vs 27174); the same three scenarios fail on both (known issue 13.2) |
-| 22 | `phase-22/decide-nothing` | in review | N/A (no append/read/lock changes) |
+| 21 | `phase-21/concurrency-governors` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 3986/7426 vs 4028/7407 events/s; raw-throughput 26110 vs 27174); the same three scenarios fail on both (known issue 13.2) |
+| 22 | `phase-22/decide-nothing` | complete | N/A (no append/read/lock changes) |
+| 23 | `phase-23/postgres-18` | in review | quick pg bench, Postgres 17 vs 18.6 (same code): no change beyond noise (throughput-scaling 3915/7219 vs 3813/6967 events/s; raw-throughput 23923 vs 25510, peak chunk 86842 vs 110000) |
 
 ## 13. Known issues
 

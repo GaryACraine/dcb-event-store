@@ -3,7 +3,7 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from "@testcontainers
 let container: StartedPostgreSqlContainer
 
 export async function setup() {
-    container = await new PostgreSqlContainer("postgres:17").withDatabase("postgres").start()
+    container = await new PostgreSqlContainer("postgres:18.6").withDatabase("postgres").start()
     process.env.__PG_CONNECTION_URI = container.getConnectionUri()
 }
 

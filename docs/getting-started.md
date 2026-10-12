@@ -115,7 +115,7 @@ docker run -d \
   --name dcb-postgres \
   -e POSTGRES_PASSWORD=postgres \
   -p 5432:5432 \
-  postgres:17
+  postgres:18.6
 ```
 
 Then create the database the examples expect:
@@ -190,7 +190,7 @@ Docker is not running, or the testcontainers Postgres container failed to start.
 Run `npm run build` from the repo root before testing. `event-store-postgres` and the examples import the compiled output of `event-store` -- if `packages/event-store/dist/` does not exist, imports will fail.
 
 **Tests hang or time out**
-Testcontainers pulls the `postgres:17` image on first run, which can take a while on slow connections. Subsequent runs use the cached image. If tests hang indefinitely, check Docker container logs:
+Testcontainers pulls the `postgres:18.6` image on first run, which can take a while on slow connections. Subsequent runs use the cached image. If tests hang indefinitely, check Docker container logs:
 
 ```bash
 docker ps -a | grep testcontainers
