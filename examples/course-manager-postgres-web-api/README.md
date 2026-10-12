@@ -75,7 +75,7 @@ docker run --rm -d \
   -e POSTGRES_PASSWORD=dcb \
   -e POSTGRES_DB=dcb \
   -p 5432:5432 \
-  postgres:16
+  postgres:18.6
 ```
 
 ### 2. Build and start the server
