@@ -1359,6 +1359,41 @@ refusal still refused. All earlier tests pass unchanged.
 
 ---
 
+## 11k. Phase 24 — Decide again after a conflict
+
+**Why.** Two commands decided on the same events race to append; the second fails its append condition
+(`AppendConditionError`, HTTP 409). In the eventmodelers kit's licensing app, two "activate organisation" requests by
+the same person at once gave 201 and 409: the loser never got its decider's own refusal ("You already belong to an
+organisation"). Emmett lets a command handler decide again on a version conflict; this library had no such option.
+
+**Reference.** Emmett's `handleCommand` (`commandHandling/handleCommand.ts`): `retry: { onVersionConflict: true |
+number | AsyncRetryOptions }`, off by default; `true` is 3 retries from 100 ms (factor 1.5), retrying only on
+`ExpectedVersionConflictError`. Marten and Axon retry a conflicting command the same way.
+
+**Changes.**
+- `HandleOptions.retry?: { onConflict: true | number | ConflictRetry }` (`ConflictRetry { retries?, backoff? }`). On
+  an `AppendConditionError` (by class, or by its code `APPEND_CONDITION` from another copy of the package),
+  `handleCommand` reads again, decides again and appends under the new condition. The second decision sees the
+  winner's events, so a command that can no longer hold is refused by its decider; one whose intent now holds may
+  decide nothing (phase 22). Any other error is thrown at once. Off unless asked.
+- `ConflictRetryDefaults`: 3 retries, `backoff: { initialMs: 100, maxMs: 1000 }` (Emmett's numbers in our shape).
+- `backoff.ts` (`Backoff`, `backoffDelay`, `sleep`, `errorMessage`) moved from `event-store-postgres` to the core
+  package, so processors and command retries share one backoff; `event-store-postgres` re-exports it.
+- An idempotency key gives the events the same ids on every attempt.
+
+**Tests.** 8 new in `Decider.tests.ts` (a store where another append lands first): no retry without the option;
+the decider's refusal after a retry; a decision of nothing after a retry; an append on a later attempt with the same
+ids; giving up after the retries with the conflict; another error never retried; a conflict known by its code; the
+defaults. 4 new in `event-store-postgres` (`conflictRetry.tests.ts`, both lock strategies): two concurrent commands,
+without retry the loser gets the conflict, with retry its decider refuses it; one event stored. Mutation-checked
+(retries off: 5 fail; the conflict filter removed: 1 fails).
+
+**Not changed:** the `EventStore` interface, append, read, locks. **Bench:** N/A (no append/read/lock changes).
+
+**Grade:** Easy. **Touches locks:** no.
+
+---
+
 ## 12. Status
 
 | Phase | Branch | Status | Bench delta |
@@ -1391,6 +1426,7 @@ refusal still refused. All earlier tests pass unchanged.
 | 21 | `phase-21/concurrency-governors` | complete | quick pg bench, main vs branch: no change beyond noise (throughput-scaling 3986/7426 vs 4028/7407 events/s; raw-throughput 26110 vs 27174); the same three scenarios fail on both (known issue 13.2) |
 | 22 | `phase-22/decide-nothing` | complete | N/A (no append/read/lock changes) |
 | 23 | `phase-23/postgres-18` | in review | quick pg bench, Postgres 17 vs 18.6 (same code): no change beyond noise (throughput-scaling 3915/7219 vs 3813/6967 events/s; raw-throughput 23923 vs 25510, peak chunk 86842 vs 110000) |
+| 24 | `phase-24/retry-on-conflict` | in review | N/A (no append/read/lock changes) |
 
 ## 13. Known issues
 
