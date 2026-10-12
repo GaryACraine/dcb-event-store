@@ -36,11 +36,21 @@ export { SequencePosition } from "./src/eventStore/SequencePosition.js"
 export { MemoryEventStore } from "./src/eventStore/memoryEventStore/MemoryEventStore.js"
 export { streamAllEventsToArray } from "./src/eventStore/streamAllEventsToArray.js"
 export { ensureIsArray } from "./src/ensureIsArray.js"
+export { backoffDelay, sleep, errorMessage, type Backoff } from "./src/backoff.js"
 
 export { EventHandler } from "./src/eventHandling/EventHandler.js"
 export { EventHandlerWithState } from "./src/eventHandling/EventHandlerWithState.js"
 export { buildDecisionModel, EventHandlers, EventHandlerStates } from "./src/eventHandling/buildDecisionModel.js"
-export { Decider, decider, handle, handleCommand, HandleOptions, HandleResult } from "./src/eventHandling/Decider.js"
+export {
+    Decider,
+    decider,
+    handle,
+    handleCommand,
+    HandleOptions,
+    HandleResult,
+    ConflictRetry,
+    ConflictRetryDefaults
+} from "./src/eventHandling/Decider.js"
 export { versionedHandler, VersionHandlers } from "./src/eventHandling/versionedHandler.js"
 
 export {
